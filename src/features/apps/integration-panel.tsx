@@ -1,66 +1,175 @@
+import { Bot, Braces, Check, Sparkles, Workflow } from 'lucide-react'
+import { useState } from 'react'
+import type { ReactNode } from 'react'
 import { CopyBlock } from '~/components/copy-block.tsx'
+import { Button } from '~/components/ui/button'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs'
+import { useT } from '~/lib/i18n/index.ts'
+import type { IntegrationSnippets, Snippet } from '~/features/apps/integration-snippets.ts'
 import type { ChannelDetail, PublicApp } from '~/server/dashboard.ts'
 
 /**
  * Ordered setup guide for the two integration points: the app reading the feed
- * and the CI pipeline publishing to it.
+ * and the pipeline publishing to it (GitHub Action or the raw HTTP API).
  */
-export function IntegrationPanel({ app, channels }: { app: PublicApp; channels: ChannelDetail[] }) {
+export function IntegrationPanel({
+  app,
+  channels,
+  snippets,
+}: {
+  app: PublicApp
+  channels: ChannelDetail[]
+  snippets: IntegrationSnippets
+}) {
+  const t = useT()
   // The default channel is what a fresh integration should point at.
   const channel = channels.find((entry) => entry.name === 'stable') ?? channels[0]
   const channelName = channel?.name ?? 'stable'
   const feedUrl = channel?.feedUrl ?? `https://your-shukka-host/api/update/${app.slug}/stable`
+  const serverUrl = feedUrl.replace(/\/api\/update\/.*$/, '')
 
   const steps = [
     {
-      title: 'Point electron-builder at the feed',
-      detail: 'The generic provider writes this URL into the app at build time. No credentials — the feed is public.',
-      code: `# electron-builder.yml
-publish:
-  provider: generic
-  url: ${feedUrl}
-  channel: ${channelName}`,
+      title: t.integration.step1Title,
+      detail: t.integration.step1Detail,
+      snippet: snippets.builderConfig,
     },
     {
-      title: 'Check for updates in the main process',
-      detail: 'electron-updater reads the feed, compares versions, and downloads through it.',
-      code: `import { autoUpdater } from 'electron-updater'
-
-autoUpdater.setFeedURL({
-  provider: 'generic',
-  url: '${feedUrl}',
-  channel: '${channelName}',
-})
-autoUpdater.checkForUpdatesAndNotify()`,
-    },
-    {
-      title: 'Publish from CI',
-      detail:
-        'Create an API key in the API keys tab, store it as a repository secret, and publish the electron-builder output directory after the build.',
-      code: `- uses: akarachen/shukka@main
-  with:
-    server-url: \${{ secrets.SHUKKA_URL }}
-    api-key: \${{ secrets.SHUKKA_API_KEY }}
-    app: ${app.slug}
-    channel: ${channelName}
-    directory: dist`,
+      title: t.integration.step2Title,
+      detail: t.integration.step2Detail,
+      snippet: snippets.mainProcess,
     },
   ]
 
+  const actionPrompt = `Set up electron-updater self-updates for this app using my Shukka instance.
+
+Facts:
+- Update feed (public, no auth): ${feedUrl}
+- Channel: ${channelName}
+- App slug: ${app.slug}
+- Publishing goes through the Shukka GitHub Action (akarachen/shukka@main) with repository secrets SHUKKA_URL (my Shukka base URL) and SHUKKA_API_KEY (I will create it in the panel and add it to the repo myself — never ask me to paste it into code).
+
+Do all of the following:
+1. In electron-builder config, set publish to the generic provider pointing at the feed URL above, with channel "${channelName}".
+2. In the Electron main process, configure electron-updater with that feed URL and channel, and call checkForUpdatesAndNotify() after app ready.
+3. Add a GitHub Actions workflow that builds the electron-builder output and publishes the dist directory with the Shukka action (inputs: server-url, api-key, app, channel, directory).
+4. Verify the config is coherent (channel names match everywhere) and tell me what manual steps remain (creating the API key, adding the secrets).`
+
+  const httpApiPrompt = `Set up electron-updater self-updates for this app using my Shukka instance, publishing over the raw HTTP API (no GitHub Action).
+
+Facts:
+- Update feed (public, no auth): ${feedUrl}
+- Channel: ${channelName}
+- App slug: ${app.slug}
+- Shukka base URL: ${serverUrl}
+- Authentication: header \`Authorization: Bearer shk_...\` — I will create the API key in the panel and provide it to the CI environment myself; never hardcode it.
+
+Upload protocol (JSON bodies; errors are { "error": <code>, "message": <string> }):
+1. POST ${serverUrl}/api/v1/upload/init with { "app": "${app.slug}", "channel": "${channelName}", "version": "<version>", "files": [{ "filename": "<name>", "size": <bytes> }, ...] } — the file list is every file in the electron-builder output directory (installers, *.blockmap, latest*.yml) and must include at least one .yml. The response contains uploadId and, per file, a presigned uploadUrl.
+2. PUT each file's raw bytes to its uploadUrl (direct to S3; URLs expire one hour after init).
+3. POST ${serverUrl}/api/v1/upload/finalize with { "uploadId": "<id>", "app": "${app.slug}" } — Shukka verifies the objects, parses the yml, and flips the channel to the new version atomically.
+
+Do all of the following:
+1. In electron-builder config, set publish to the generic provider pointing at the feed URL above, with channel "${channelName}".
+2. In the Electron main process, configure electron-updater with that feed URL and channel, and call checkForUpdatesAndNotify() after app ready.
+3. Write a publish script (or CI step) that follows the upload protocol above against the electron-builder output directory, reading the version from the latest*.yml it contains.
+4. Verify the config is coherent (channel names match everywhere) and tell me what manual steps remain (creating the API key, wiring it into CI).`
+
   return (
-    <ol className="max-w-3xl space-y-10">
-      {steps.map((step, index) => (
-        <li key={step.title} className="grid gap-2.5">
-          <div className="flex items-baseline gap-3">
-            <span className="font-mono text-sm text-muted-foreground">0{index + 1}</span>
-            <h3 className="text-base">{step.title}</h3>
-          </div>
-          <p className="pl-8 text-sm text-muted-foreground">{step.detail}</p>
-          <div className="pl-8">
-            <CopyBlock value={step.code} />
-          </div>
-        </li>
-      ))}
-    </ol>
+    <div className="max-w-3xl space-y-10">
+      <ol className="space-y-10">
+        {steps.map((step, index) => (
+          <li key={step.title} className="grid gap-2.5">
+            <div className="flex items-baseline gap-3">
+              <span className="font-mono text-sm text-muted-foreground">0{index + 1}</span>
+              <h3 className="text-base">{step.title}</h3>
+            </div>
+            <p className="pl-8 text-sm text-muted-foreground">{step.detail}</p>
+            <div className="pl-8">
+              <CopyBlock value={step.snippet.code} html={step.snippet.html} />
+            </div>
+          </li>
+        ))}
+      </ol>
+
+      <section className="grid gap-2.5">
+        <div className="flex items-baseline gap-3">
+          <span className="font-mono text-sm text-muted-foreground">03</span>
+          <h3 className="text-base">{t.integration.publishTitle}</h3>
+        </div>
+        <p className="pl-8 text-sm text-muted-foreground">{t.integration.publishDetail}</p>
+
+        <Tabs defaultValue="action" className="mt-2.5 pl-8">
+          <TabsList>
+            <TabsTrigger value="action">
+              <Workflow /> {t.integration.githubActionTitle}
+            </TabsTrigger>
+            <TabsTrigger value="http">
+              <Braces /> {t.integration.httpApiTitle}
+            </TabsTrigger>
+            <TabsTrigger value="agent">
+              <Bot /> {t.integration.agentTitle}
+            </TabsTrigger>
+          </TabsList>
+          <TabsContent value="action" className="mt-4">
+            <PublishMethod
+              detail={t.integration.githubActionDetail}
+              snippet={snippets.githubAction}
+              action={<CopyAgentPrompt value={actionPrompt} />}
+            />
+          </TabsContent>
+          <TabsContent value="http" className="mt-4">
+            <PublishMethod
+              detail={t.integration.httpApiDetail}
+              snippet={snippets.httpApi}
+              action={<CopyAgentPrompt value={httpApiPrompt} />}
+            />
+          </TabsContent>
+          <TabsContent value="agent" className="mt-4">
+            <PublishMethod detail={t.integration.agentDetail} snippet={snippets.agentCli} />
+          </TabsContent>
+        </Tabs>
+      </section>
+    </div>
+  )
+}
+
+/** One publish path: detail, copyable snippet, and an optional trailing action. */
+function PublishMethod({
+  detail,
+  snippet,
+  action,
+}: {
+  detail: string
+  snippet: Snippet
+  action?: ReactNode
+}) {
+  return (
+    <div className="grid gap-2.5">
+      <div className="flex items-center justify-between gap-4">
+        <p className="text-sm text-muted-foreground">{detail}</p>
+        {action}
+      </div>
+      <CopyBlock value={snippet.code} html={snippet.html} />
+    </div>
+  )
+}
+
+/** One-click handoff: copies a ready-made agent prompt for the whole pipeline. */
+function CopyAgentPrompt({ value }: { value: string }) {
+  const t = useT()
+  const [copied, setCopied] = useState(false)
+
+  async function copy() {
+    await navigator.clipboard.writeText(value)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
+  }
+
+  return (
+    <Button type="button" variant="outline" size="sm" onClick={copy}>
+      {copied ? <Check className="text-success" /> : <Sparkles />}
+      {t.integration.copyAgentPrompt}
+    </Button>
   )
 }
