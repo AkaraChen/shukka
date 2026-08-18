@@ -1,8 +1,8 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { ChartColumn, Check, Copy, FileText, GitBranch, Plus, Trash2 } from 'lucide-react'
+import { ChartColumn, ArrowUpToLine, Check, Copy, FileText, GitBranch, Plus, Trash2 } from 'lucide-react'
 import { parseAsString, useQueryState } from 'nuqs'
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import {
@@ -19,6 +19,7 @@ import { Label } from '~/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '~/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '~/components/ui/table'
 import { Tabs, TabsList, TabsTrigger } from '~/components/ui/tabs'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '~/components/ui/tooltip'
 import { useFormatters, useT } from '~/lib/i18n/index.ts'
 import { useViewRole } from '~/lib/role-context.ts'
 import { canEditReleaseNotes, canSeeTrafficStats } from '~/lib/role.ts'
@@ -193,6 +194,16 @@ function FeedUrlRow({ url, className }: { url: string; className?: string }) {
   )
 }
 
+/** Icon-only row action with a tooltip carrying the label. */
+function RowAction({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
+  )
+}
+
 function HistoryTable({ appId, app, channel }: { appId: number; app: PublicApp; channel: ChannelDetail }) {
   const queryClient = useQueryClient()
   const setCurrent = useMutation(setCurrentVersionMutationOptions({ appId, queryClient }))
@@ -225,45 +236,54 @@ function HistoryTable({ appId, app, channel }: { appId: number; app: PublicApp; 
                 </TableCell>
                 <TableCell className="text-foreground/40">{format.when(version.releasedAt)}</TableCell>
                 <TableCell className="text-right whitespace-nowrap">
-                  <div className="flex items-center justify-end gap-2">
-                    {version.isCurrent ? null : (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-muted-foreground"
-                        onClick={() => setCurrent.mutate({ channelId: channel.id, versionId: version.id })}
-                      >
-                        {t.channels.makeCurrent}
-                      </Button>
-                    )}
-                    {app.releaseLogEnabled && canEditReleaseNotes(role) ? (
-                      <Button
-                        size="sm"
-                        className="h-7"
-                        aria-label={t.releaseLog.editNotes(version.version)}
-                        asChild
-                      >
-                        <Link to="/apps/$appId/notes/$versionId" params={{ appId: String(appId), versionId: String(version.id) }}>
-                          <FileText />
-                          {t.releaseLog.notes}
-                        </Link>
-                      </Button>
-                    ) : null}
-                    {canSeeTrafficStats(role) ? <VersionStatsDialog version={version} /> : null}
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-7 text-destructive hover:text-destructive"
-                      aria-label={t.channels.deleteVersion(version.version)}
-                      onClick={() => {
-                        if (confirm(t.channels.deleteVersionConfirm(version.version))) {
-                          deleteVersion.mutate(version.id)
-                        }
-                      }}
-                    >
-                      <Trash2 />
-                    </Button>
-                  </div>
+                  <TooltipProvider>
+                    <div className="flex items-center justify-end gap-2">
+                      {version.isCurrent ? null : (
+                        <RowAction label={t.channels.makeCurrent}>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="size-7 text-muted-foreground"
+                            aria-label={t.channels.makeCurrent}
+                            onClick={() => setCurrent.mutate({ channelId: channel.id, versionId: version.id })}
+                          >
+                            <ArrowUpToLine />
+                          </Button>
+                        </RowAction>
+                      )}
+                      {app.releaseLogEnabled && canEditReleaseNotes(role) ? (
+                        <RowAction label={t.releaseLog.notes}>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="size-7"
+                            aria-label={t.releaseLog.editNotes(version.version)}
+                            asChild
+                          >
+                            <Link to="/apps/$appId/notes/$versionId" params={{ appId: String(appId), versionId: String(version.id) }}>
+                              <FileText />
+                            </Link>
+                          </Button>
+                        </RowAction>
+                      ) : null}
+                      {canSeeTrafficStats(role) ? <VersionStatsDialog version={version} /> : null}
+                      <RowAction label={t.common.delete}>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-7 text-destructive hover:text-destructive"
+                          aria-label={t.channels.deleteVersion(version.version)}
+                          onClick={() => {
+                            if (confirm(t.channels.deleteVersionConfirm(version.version))) {
+                              deleteVersion.mutate(version.id)
+                            }
+                          }}
+                        >
+                          <Trash2 />
+                        </Button>
+                      </RowAction>
+                    </div>
+                  </TooltipProvider>
                 </TableCell>
               </TableRow>
             ))}
@@ -280,17 +300,21 @@ function VersionStatsDialog({ version }: { version: VersionDetail }) {
 
   return (
     <Dialog>
-      <DialogTrigger asChild>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 text-muted-foreground"
-          aria-label={t.channels.viewStats(version.version)}
-        >
-          <ChartColumn />
-          {t.channels.stats}
-        </Button>
-      </DialogTrigger>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <DialogTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-7 text-muted-foreground"
+              aria-label={t.channels.viewStats(version.version)}
+            >
+              <ChartColumn />
+            </Button>
+          </DialogTrigger>
+        </TooltipTrigger>
+        <TooltipContent>{t.channels.stats}</TooltipContent>
+      </Tooltip>
       <DialogContent className="sm:max-w-xl" aria-describedby={undefined}>
         <DialogHeader className="flex-row items-center gap-2.5">
           <ChartColumn className="size-5 text-muted-foreground" />
