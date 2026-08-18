@@ -28,11 +28,33 @@ Before any commit, review staged, unstaged, and untracked changes against `docs/
 
 # Commands
 
-Project: `project`.
+Project: `shukka` — TanStack Start app (panel + API + update feed), SQLite via Drizzle, S3 for artifacts.
 
-Document the repository's real build, test, lint, and format commands here after the first 质问 or when the stack is known.
+| Command | Purpose |
+|---------|---------|
+| `npm run dev` | Panel and API on :3000 |
+| `npm run build` | Vite + Nitro build into `.output/` |
+| `npm start` | Run the built server |
+| `npm run check` | `lint` + `typecheck` + `test` — run before commit |
+| `npm run lint` | oxlint |
+| `npm run typecheck` | `tsc -b` (needs `src/routeTree.gen.ts`, produced by a build or dev run) |
+| `npm test` | vitest |
+| `npm run db:generate` | Regenerate `drizzle/` migrations after editing `src/db/schema.ts` |
+| `actionlint` | Lint `action.yml` and workflows |
 
-- Prefer the project's existing package manager and scripts over inventing new ones.
+The GitHub Action is exercised end to end with `act` against a local MinIO; see the comment at the
+top of `.github/workflows/action-test.yml`.
+
+Layout:
+
+| Path | Owns |
+|------|------|
+| `src/routes/` | Pages and server routes (thin — validation and delegation only) |
+| `src/server/` | Domain services: apps, channels, releases, feed, dashboard read models |
+| `src/lib/` | Infrastructure: storage, crypto, auth, typed errors, update-metadata parsing |
+| `src/features/` | Panel feature UI and TanStack Query hooks |
+| `src/components/ui/` | shadcn primitives, lightly themed (pill buttons, regular-weight titles) — keep close to upstream |
+| `scripts/shukka-upload.mjs` | Zero-dependency uploader shared by the action and manual use |
 
 # Code style
 

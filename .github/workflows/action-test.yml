@@ -1,0 +1,73 @@
+name: Action test
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - action.yml
+      - scripts/shukka-upload.mjs
+      - .github/workflows/action-test.yml
+
+permissions:
+  contents: read
+
+# Runs the real publish path against a real MinIO bucket.
+#
+# Locally with act: start MinIO and Shukka on the host first, then
+#   act workflow_dispatch -W .github/workflows/action-test.yml \
+#     --env SHUKKA_URL=http://host.docker.internal:3777 \
+#     --env MINIO_URL=http://localhost:9000
+# SHUKKA_URL is dialled from inside the act container, while MINIO_URL is the
+# endpoint the host-side Shukka process uses - hence the different hostnames.
+# The two setup steps below are skipped under act since the host provides both.
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      SHUKKA_URL: ${{ vars.SHUKKA_URL || 'http://localhost:3000' }}
+      MINIO_URL: ${{ vars.MINIO_URL || 'http://localhost:9000' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Start MinIO
+        if: ${{ !env.ACT }}
+        run: |
+          docker run -d --name minio -p 9000:9000 \
+            -e MINIO_ROOT_USER=shukka -e MINIO_ROOT_PASSWORD=shukkasecret \
+            quay.io/minio/minio server /data
+          node .github/scripts/wait-for.mjs "$MINIO_URL/minio/health/live"
+          docker exec minio mkdir -p /data/releases
+
+      - name: Build and start Shukka
+        if: ${{ !env.ACT }}
+        run: |
+          npm ci
+          npm run build
+          npm start &
+          node .github/scripts/wait-for.mjs "$SHUKKA_URL/api/admin/session"
+
+      - name: Provision app, bucket and API key
+        id: provision
+        run: node .github/scripts/provision.mjs
+
+      - name: Build a fake electron-builder release
+        run: node .github/scripts/fake-release.mjs out "1.2.${{ github.run_number }}"
+
+      - name: Publish with the action
+        id: publish
+        uses: ./
+        with:
+          server-url: ${{ env.SHUKKA_URL }}
+          api-key: ${{ steps.provision.outputs.api-key }}
+          app: demo-app
+          channel: stable
+          directory: out
+
+      - name: Verify the update feed serves the new version
+        run: |
+          node .github/scripts/verify-feed.mjs \
+            "$SHUKKA_URL/api/update/demo-app/stable" "${{ steps.publish.outputs.version }}"

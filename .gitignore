@@ -22,3 +22,10 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Shukka
+.output
+data
+out
+src/routeTree.gen.ts
+tsconfig.tsbuildinfo

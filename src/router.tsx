@@ -1,14 +1,22 @@
+import { QueryClient } from '@tanstack/react-query'
+import { createRouter as createTanStackRouter } from '@tanstack/react-router'
+import { routeTree } from './routeTree.gen'
 
-import { createBrowserRouter } from "react-router-dom";
-import Home from "./Home";
-// Define your routes
-const router = createBrowserRouter([
-  {
-    path: "/",
-    element: <Home />,
-  },
-]);
+export function getRouter() {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { staleTime: 5_000, retry: false } },
+  })
 
-export default router;
+  return createTanStackRouter({
+    routeTree,
+    context: { queryClient },
+    defaultPreload: 'intent',
+    scrollRestoration: true,
+  })
+}
 
-  
+declare module '@tanstack/react-router' {
+  interface Register {
+    router: ReturnType<typeof getRouter>
+  }
+}

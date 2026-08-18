@@ -1,0 +1,270 @@
+import './setup-db.ts'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+/** In-memory stand-in for S3 so the protocol invariants can be tested without a bucket. */
+const objects = new Map<string, string>()
+
+vi.mock('~/lib/storage.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('~/lib/storage.ts')>()
+  return {
+    ...actual,
+    verifyWritable: vi.fn(async () => undefined),
+    presignPut: vi.fn(async (_s3: unknown, key: string) => `https://storage.test/${key}?put`),
+    presignGet: vi.fn(async (_s3: unknown, key: string) => `https://storage.test/${key}?get`),
+    headObject: vi.fn(async (_s3: unknown, key: string) =>
+      objects.has(key) ? { size: Buffer.byteLength(objects.get(key)!) } : null,
+    ),
+    getObjectText: vi.fn(async (_s3: unknown, key: string) => objects.get(key) ?? ''),
+    deleteObjects: vi.fn(async (_s3: unknown, keys: string[]) => {
+      for (const key of keys) objects.delete(key)
+    }),
+  }
+})
+
+const { eq } = await import('drizzle-orm')
+const { db } = await import('~/db/index.ts')
+const { apps, versions } = await import('~/db/schema.ts')
+const { createApp, DEFAULT_CHANNEL } = await import('~/server/apps.ts')
+const { createChannel, deleteChannel, getChannel } = await import('~/server/channels.ts')
+const { deleteVersion, finalizeUpload, initUpload } = await import('~/server/releases.ts')
+const { resolveFeedRequest } = await import('~/server/feed.ts')
+const { ShukkaError } = await import('~/lib/errors.ts')
+
+const appInput = {
+  name: 'Acme',
+  slug: 'acme',
+  s3Endpoint: null,
+  s3Region: 'us-east-1',
+  s3Bucket: 'releases',
+  s3Prefix: 'acme',
+  s3AccessKeyId: 'key',
+  s3SecretAccessKey: 'secret',
+  s3ForcePathStyle: false,
+}
+
+function metadataFor(version: string, installer: string) {
+  return `version: ${version}\nfiles:\n  - url: ${installer}\n    sha512: aaa==\n    size: 10\npath: ${installer}\n`
+}
+
+/** Runs a full init → upload → finalize cycle. */
+async function publish(app: Awaited<ReturnType<typeof createApp>>, channel: string, version: string) {
+  const installer = `Acme-Setup-${version}.exe`
+  const init = await initUpload(app, {
+    channel,
+    version,
+    files: [{ filename: 'latest.yml' }, { filename: installer }],
+  })
+  for (const file of init.files) {
+    objects.set(file.key, file.filename === 'latest.yml' ? metadataFor(version, installer) : 'binary')
+  }
+  return { init, result: await finalizeUpload(app, init.uploadId), installer }
+}
+
+describe('release flow', () => {
+  beforeEach(() => {
+    db.delete(apps).run()
+    objects.clear()
+  })
+
+  it('creates a default stable channel with the app', async () => {
+    const app = await createApp(appInput)
+    expect(getChannel(app.id, DEFAULT_CHANNEL).name).toBe(DEFAULT_CHANNEL)
+  })
+
+  it('keeps a pending upload invisible to the feed until finalize', async () => {
+    const app = await createApp(appInput)
+    await publish(app, 'stable', '1.0.0')
+
+    const init = await initUpload(app, {
+      channel: 'stable',
+      version: '2.0.0',
+      files: [{ filename: 'latest.yml' }, { filename: 'Acme-Setup-2.0.0.exe' }],
+    })
+    for (const file of init.files) {
+      objects.set(file.key, file.filename === 'latest.yml' ? metadataFor('2.0.0', 'Acme-Setup-2.0.0.exe') : 'binary')
+    }
+
+    const beforeFinalize = await resolveFeedRequest('acme', 'stable', 'latest.yml')
+    expect(beforeFinalize).toMatchObject({ kind: 'metadata' })
+    expect((beforeFinalize as { body: string }).body).toContain('version: 1.0.0')
+
+    await finalizeUpload(app, init.uploadId)
+    const afterFinalize = await resolveFeedRequest('acme', 'stable', 'latest.yml')
+    expect((afterFinalize as { body: string }).body).toContain('version: 2.0.0')
+  })
+
+  it('serves metadata verbatim and redirects artifacts', async () => {
+    const app = await createApp(appInput)
+    const { installer } = await publish(app, 'stable', '1.0.0')
+
+    const metadata = await resolveFeedRequest('acme', 'stable', 'latest.yml')
+    expect(metadata).toEqual({ kind: 'metadata', body: metadataFor('1.0.0', installer) })
+
+    const artifact = await resolveFeedRequest('acme', 'stable', installer)
+    expect(artifact.kind).toBe('redirect')
+    expect((artifact as { url: string }).url).toContain('acme/stable/1.0.0/')
+  })
+
+  it('counts metadata checks and artifact downloads per version', async () => {
+    const app = await createApp(appInput)
+    const { installer, result } = await publish(app, 'stable', '1.0.0')
+
+    await resolveFeedRequest('acme', 'stable', 'latest.yml')
+    await resolveFeedRequest('acme', 'stable', 'latest.yml')
+    await resolveFeedRequest('acme', 'stable', installer)
+
+    const row = db.select().from(versions).where(eq(versions.id, result.versionId)).get()
+    expect(row?.metadataHits).toBe(2)
+    expect(row?.artifactHits).toBe(1)
+  })
+
+  it('rejects a duplicate version on the same channel', async () => {
+    const app = await createApp(appInput)
+    await publish(app, 'stable', '1.0.0')
+    await expect(publish(app, 'stable', '1.0.0')).rejects.toThrow(/already exists/)
+  })
+
+  it('allows the same version string on a different channel', async () => {
+    const app = await createApp(appInput)
+    createChannel(app.id, 'beta')
+    await publish(app, 'stable', '1.0.0')
+    await expect(publish(app, 'beta', '1.0.0')).resolves.toBeDefined()
+  })
+
+  it('refuses to finalize when an artifact was never uploaded', async () => {
+    const app = await createApp(appInput)
+    const init = await initUpload(app, {
+      channel: 'stable',
+      version: '1.0.0',
+      files: [{ filename: 'latest.yml' }, { filename: 'Acme-Setup-1.0.0.exe' }],
+    })
+    objects.set(init.files[0].key, metadataFor('1.0.0', 'Acme-Setup-1.0.0.exe'))
+
+    await expect(finalizeUpload(app, init.uploadId)).rejects.toThrow(/was not uploaded/)
+    expect(getChannel(app.id, 'stable').currentVersionId).toBeNull()
+  })
+
+  it('refuses metadata that disagrees with the declared version', async () => {
+    const app = await createApp(appInput)
+    const init = await initUpload(app, {
+      channel: 'stable',
+      version: '1.0.0',
+      files: [{ filename: 'latest.yml' }, { filename: 'Acme-Setup-1.0.0.exe' }],
+    })
+    objects.set(init.files[0].key, metadataFor('9.9.9', 'Acme-Setup-1.0.0.exe'))
+    objects.set(init.files[1].key, 'binary')
+
+    await expect(finalizeUpload(app, init.uploadId)).rejects.toThrow(ShukkaError)
+  })
+
+  it('requires at least one metadata file', async () => {
+    const app = await createApp(appInput)
+    await expect(
+      initUpload(app, { channel: 'stable', version: '1.0.0', files: [{ filename: 'Acme.exe' }] }),
+    ).rejects.toThrow(/metadata file/)
+  })
+
+  it('does not create an unknown channel unless asked', async () => {
+    const app = await createApp(appInput)
+    await expect(
+      initUpload(app, { channel: 'nightly', version: '1.0.0', files: [{ filename: 'latest.yml' }] }),
+    ).rejects.toThrow(/not found/)
+
+    const init = await initUpload(app, {
+      channel: 'nightly',
+      version: '1.0.0',
+      files: [{ filename: 'latest.yml' }],
+      createChannel: true,
+    })
+    expect(init.uploadId).toBeTruthy()
+  })
+
+  it('falls back to the previous version when the current one is deleted', async () => {
+    const app = await createApp(appInput)
+    const first = await publish(app, 'stable', '1.0.0')
+    const second = await publish(app, 'stable', '2.0.0')
+
+    await deleteVersion(app, second.result.versionId)
+    expect(getChannel(app.id, 'stable').currentVersionId).toBe(first.result.versionId)
+
+    await deleteVersion(app, first.result.versionId)
+    expect(getChannel(app.id, 'stable').currentVersionId).toBeNull()
+  })
+
+  it('404s the feed for a channel with no published version', async () => {
+    const app = await createApp(appInput)
+    createChannel(app.id, 'beta')
+    await expect(resolveFeedRequest('acme', 'beta', 'latest.yml')).rejects.toThrow(/no published version/)
+  })
+})
+
+describe('destructive operations', () => {
+  beforeEach(() => {
+    db.delete(apps).run()
+    objects.clear()
+  })
+
+  it('deletes stored objects when a channel is removed', async () => {
+    const app = await createApp(appInput)
+    createChannel(app.id, 'beta')
+    await publish(app, 'stable', '1.0.0')
+    await publish(app, 'beta', '1.0.0')
+
+    const betaKeys = [...objects.keys()].filter((key) => key.includes('/beta/'))
+    expect(betaKeys.length).toBeGreaterThan(0)
+
+    await deleteChannel(app, getChannel(app.id, 'beta').id)
+
+    expect([...objects.keys()].some((key) => key.includes('/beta/'))).toBe(false)
+    // The other channel's objects are untouched.
+    expect([...objects.keys()].some((key) => key.includes('/stable/'))).toBe(true)
+  })
+})
+
+describe('input validation', () => {
+  beforeEach(() => {
+    db.delete(apps).run()
+    objects.clear()
+  })
+
+  it('rejects version strings that would escape the object key layout', async () => {
+    const app = await createApp(appInput)
+    for (const version of ['../evil', 'a/b', '.hidden', 'a\\b', '1.0.0/../..']) {
+      await expect(
+        initUpload(app, { channel: 'stable', version, files: [{ filename: 'latest.yml' }] }),
+      ).rejects.toThrow(/Invalid version string/)
+    }
+  })
+
+  it('rejects artifact filenames containing path separators', async () => {
+    const app = await createApp(appInput)
+    await expect(
+      initUpload(app, {
+        channel: 'stable',
+        version: '1.0.0',
+        files: [{ filename: 'latest.yml' }, { filename: '../escape.exe' }],
+      }),
+    ).rejects.toThrow(/Invalid artifact filename/)
+  })
+})
+
+describe('metadata consistency', () => {
+  beforeEach(() => {
+    db.delete(apps).run()
+    objects.clear()
+  })
+
+  it('refuses metadata that references a file outside the upload', async () => {
+    const app = await createApp(appInput)
+    const init = await initUpload(app, {
+      channel: 'stable',
+      version: '1.0.0',
+      files: [{ filename: 'latest.yml' }, { filename: 'Acme-Setup-1.0.0.exe' }],
+    })
+    // The yml points at a file that was never part of the upload.
+    objects.set(init.files[0].key, metadataFor('1.0.0', 'Acme-Setup-1.0.0.dmg'))
+    objects.set(init.files[1].key, 'binary')
+
+    await expect(finalizeUpload(app, init.uploadId)).rejects.toThrow(/were not uploaded/)
+  })
+})
