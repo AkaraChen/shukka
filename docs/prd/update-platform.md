@@ -32,7 +32,7 @@ Shukka 是一个自托管的发版管理器：面板管理 app / channel / 版�
 - 灰度发布（stagingPercentage）、回滚编排——channel 当前版本可手动指回旧版本即可。
 - 生成或改写 electron-updater 元数据；Squirrel.Windows、自建差分。
 - 制品代理传输：Shukka 不中转制品字节，上传下载都直连 S3。
-- 下载分析报表（地域、版本迁移曲线等），v1 只有计数。
+- 下载分析报表（地域、版本迁移曲线、去重用户等）；命中随时间的趋势图见 `docs/prd/hit-trends.md`。
 
 ## Flows
 
