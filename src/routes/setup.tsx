@@ -1,10 +1,12 @@
+import { useMutation } from '@tanstack/react-query'
 import { createFileRoute, redirect, useRouter } from '@tanstack/react-router'
 import { useState } from 'react'
 import { AuthCard } from '~/components/auth-card.tsx'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
-import { ApiError, api } from '~/lib/api.ts'
+import { setupMutationOptions } from '~/features/auth/requests/session.ts'
+import { translateError, useT } from '~/lib/i18n/index.ts'
 import { getSessionState } from '~/server/session-fn.ts'
 
 export const Route = createFileRoute('/setup')({
@@ -17,38 +19,31 @@ export const Route = createFileRoute('/setup')({
 
 function SetupPage() {
   const router = useRouter()
+  const t = useT()
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
   const [error, setError] = useState<string | null>(null)
-  const [pending, setPending] = useState(false)
+  const setup = useMutation(setupMutationOptions())
 
   async function onSubmit(event: React.FormEvent) {
     event.preventDefault()
     if (password !== confirm) {
-      setError('The two passwords do not match')
+      setError(t.auth.passwordMismatch)
       return
     }
-    setPending(true)
     setError(null)
     try {
-      await api.post('/api/admin/setup', { password })
+      await setup.mutateAsync({ password })
       await router.navigate({ to: '/apps' })
     } catch (cause) {
-      setError(cause instanceof ApiError ? cause.message : 'Setup failed')
-    } finally {
-      setPending(false)
+      setError(translateError(t, cause, t.auth.setupFailed))
     }
   }
 
   return (
-    <AuthCard
-      title="Set up Shukka"
-      description="Choose the admin password for this instance. It is the only credential for the panel."
-      error={error}
-      onSubmit={onSubmit}
-    >
+    <AuthCard title={t.auth.setupTitle} description={t.auth.setupDescription} error={error} onSubmit={onSubmit}>
       <div className="grid gap-2">
-        <Label htmlFor="password">Admin password</Label>
+        <Label htmlFor="password">{t.auth.adminPassword}</Label>
         <Input
           id="password"
           type="password"
@@ -58,10 +53,10 @@ function SetupPage() {
           value={password}
           onChange={(event) => setPassword(event.target.value)}
         />
-        <p className="text-xs text-muted-foreground">At least 8 characters.</p>
+        <p className="text-xs text-muted-foreground">{t.auth.passwordHint}</p>
       </div>
       <div className="grid gap-2">
-        <Label htmlFor="confirm">Confirm password</Label>
+        <Label htmlFor="confirm">{t.auth.confirmPassword}</Label>
         <Input
           id="confirm"
           type="password"
@@ -71,8 +66,8 @@ function SetupPage() {
           onChange={(event) => setConfirm(event.target.value)}
         />
       </div>
-      <Button type="submit" disabled={pending} className="w-full">
-        {pending ? 'Creating…' : 'Create admin account'}
+      <Button type="submit" disabled={setup.isPending} className="w-full">
+        {setup.isPending ? t.auth.creating : t.auth.createAccount}
       </Button>
     </AuthCard>
   )

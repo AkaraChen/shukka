@@ -150,3 +150,15 @@ export function revokeApiKey(appId: number, keyId: number): void {
     .get()
   if (!result) throw new ShukkaError('not_found', 'API key not found')
 }
+
+/** Hard-deletes a key, but only once it has been revoked — never a live credential. */
+export function deleteApiKey(appId: number, keyId: number): void {
+  const key = db
+    .select()
+    .from(apiKeys)
+    .where(and(eq(apiKeys.id, keyId), eq(apiKeys.appId, appId)))
+    .get()
+  if (!key) throw new ShukkaError('not_found', 'API key not found')
+  if (!key.revokedAt) throw new ShukkaError('invalid_request', 'Only revoked API keys can be deleted')
+  db.delete(apiKeys).where(eq(apiKeys.id, keyId)).run()
+}

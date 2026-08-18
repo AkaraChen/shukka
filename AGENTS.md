@@ -53,7 +53,7 @@ Layout:
 | `src/server/` | Domain services: apps, channels, releases, feed, dashboard read models |
 | `src/lib/` | Infrastructure: storage, crypto, auth, typed errors, update-metadata parsing |
 | `src/features/` | Panel feature UI and TanStack Query hooks |
-| `src/components/ui/` | shadcn primitives, lightly themed (pill buttons, regular-weight titles) — keep close to upstream |
+| `src/components/ui/` | shadcn primitives, lightly themed (regular-weight titles) — keep close to upstream |
 | `scripts/shukka-upload.mjs` | Zero-dependency uploader shared by the action and manual use |
 
 # Code style

@@ -1,10 +1,10 @@
-import { KeyRound, Plus } from 'lucide-react'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { KeyRound, Plus, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { CopyBlock } from '~/components/copy-block.tsx'
 import { Alert, AlertDescription, AlertTitle } from '~/components/ui/alert'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
-import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card'
 import {
   Dialog,
   DialogContent,
@@ -17,96 +17,154 @@ import {
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '~/components/ui/table'
-import { useCreateApiKey, useRevokeApiKey } from './queries.ts'
+import { useFormatters, useT } from '~/lib/i18n/index.ts'
+import { createApiKeyMutationOptions, deleteApiKeyMutationOptions, revokeApiKeyMutationOptions } from './requests/apps.ts'
 import type { AppDetail } from '~/server/dashboard.ts'
 
+type ApiKey = AppDetail['keys'][number]
+
 export function ApiKeysPanel({ appId, keys }: { appId: number; keys: AppDetail['keys'] }) {
-  const revoke = useRevokeApiKey(appId)
   const [plaintext, setPlaintext] = useState<string | null>(null)
+  const t = useT()
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>API keys</CardTitle>
-        <CardDescription>Each key can upload versions for this app only.</CardDescription>
-        <CardAction>
-          <NewKeyDialog appId={appId} onCreated={setPlaintext} />
-        </CardAction>
-      </CardHeader>
+    <section className="max-w-3xl">
+      <div className="flex items-end justify-between gap-4">
+        <div>
+          <h3 className="text-base">{t.apiKeys.title}</h3>
+          <p className="mt-1 text-sm text-muted-foreground">{t.apiKeys.description}</p>
+        </div>
+        <NewKeyDialog appId={appId} onCreated={setPlaintext} />
+      </div>
 
-      <CardContent className="space-y-4">
-        {plaintext ? (
-          <Alert className="border-flare/40 bg-flare/5">
-            <KeyRound className="text-flare" />
-            <AlertTitle>Copy this key now</AlertTitle>
-            <AlertDescription className="block space-y-2">
-              <span>It is shown once and cannot be retrieved again.</span>
-              <CopyBlock value={plaintext} className="w-full" />
-            </AlertDescription>
-          </Alert>
-        ) : null}
+      <div className="mt-5 space-y-4">
+        {plaintext ? <PlaintextAlert plaintext={plaintext} /> : null}
+        {keys.length > 0 ? <KeysTable appId={appId} keys={keys} /> : <EmptyState />}
+      </div>
+    </section>
+  )
+}
 
-        {keys.length > 0 ? (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Key</TableHead>
-                <TableHead>Created</TableHead>
-                <TableHead>Last used</TableHead>
-                <TableHead />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {keys.map((key) => (
-                <TableRow key={key.id}>
-                  <TableCell>{key.name}</TableCell>
-                  <TableCell className="font-mono text-xs">{key.hint}</TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {new Date(key.createdAt * 1000).toLocaleDateString()}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {key.lastUsedAt ? new Date(key.lastUsedAt * 1000).toLocaleString() : 'never'}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {key.revokedAt ? (
-                      <Badge variant="outline">revoked</Badge>
-                    ) : (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          if (confirm(`Revoke "${key.name}"? Uploads using it will fail immediately.`)) {
-                            revoke.mutate(key.id)
-                          }
-                        }}
-                      >
-                        Revoke
-                      </Button>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+/** One-time reveal of a just-created key — the only moment the plaintext exists. */
+function PlaintextAlert({ plaintext }: { plaintext: string }) {
+  const t = useT()
+  return (
+    <Alert className="border-flare/40 bg-flare/5">
+      <KeyRound className="text-flare" />
+      <AlertTitle className="font-normal">{t.apiKeys.copyNow}</AlertTitle>
+      <AlertDescription className="block space-y-2.5">
+        <span>{t.apiKeys.shownOnce}</span>
+        <CopyBlock value={plaintext} className="w-full" />
+      </AlertDescription>
+    </Alert>
+  )
+}
+
+function KeysTable({ appId, keys }: { appId: number; keys: ApiKey[] }) {
+  const t = useT()
+  return (
+    <div className="overflow-hidden rounded-2xl bg-card px-4">
+      <Table>
+        <TableHeader>
+          <TableRow className="hover:bg-transparent">
+            <TableHead className="text-xs font-normal text-muted-foreground">{t.apiKeys.name}</TableHead>
+            <TableHead className="text-xs font-normal text-muted-foreground">{t.apiKeys.key}</TableHead>
+            <TableHead className="text-xs font-normal text-muted-foreground">{t.apiKeys.created}</TableHead>
+            <TableHead className="text-xs font-normal text-muted-foreground">{t.apiKeys.lastUsed}</TableHead>
+            <TableHead />
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {keys.map((key) => (
+            <KeyRow key={key.id} appId={appId} apiKey={key} />
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  )
+}
+
+/**
+ * Hierarchy runs down the ink ladder, never weight: the name at full ink, the
+ * machine hint in mono one step down, dates at the tertiary step. Revoked rows
+ * are capped at the secondary step so they read as inactive.
+ */
+function KeyRow({ appId, apiKey }: { appId: number; apiKey: ApiKey }) {
+  const queryClient = useQueryClient()
+  const revoke = useMutation(revokeApiKeyMutationOptions({ appId, queryClient }))
+  const deleteKey = useMutation(deleteApiKeyMutationOptions({ appId, queryClient }))
+  const t = useT()
+  const format = useFormatters()
+
+  return (
+    <TableRow className={apiKey.revokedAt ? 'text-muted-foreground' : undefined}>
+      <TableCell>{apiKey.name}</TableCell>
+      <TableCell className="font-mono text-xs text-muted-foreground">{apiKey.hint}</TableCell>
+      <TableCell className="text-foreground/40">{format.date(apiKey.createdAt)}</TableCell>
+      <TableCell className="text-foreground/40">
+        {apiKey.lastUsedAt ? format.dateTime(apiKey.lastUsedAt) : t.apiKeys.never}
+      </TableCell>
+      <TableCell className="text-right">
+        {apiKey.revokedAt ? (
+          <div className="flex items-center justify-end gap-2">
+            <Badge variant="outline" className="text-muted-foreground">
+              {t.apiKeys.revoked}
+            </Badge>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-7 text-muted-foreground hover:text-destructive"
+              aria-label={t.apiKeys.delete}
+              onClick={() => {
+                if (confirm(t.apiKeys.deleteConfirm(apiKey.name))) {
+                  deleteKey.mutate(apiKey.id)
+                }
+              }}
+            >
+              <Trash2 />
+            </Button>
+          </div>
         ) : (
-          <p className="text-sm text-muted-foreground">No keys yet.</p>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground"
+            onClick={() => {
+              if (confirm(t.apiKeys.revokeConfirm(apiKey.name))) {
+                revoke.mutate(apiKey.id)
+              }
+            }}
+          >
+            {t.apiKeys.revoke}
+          </Button>
         )}
-      </CardContent>
-    </Card>
+      </TableCell>
+    </TableRow>
+  )
+}
+
+function EmptyState() {
+  const t = useT()
+  return (
+    <div className="grid justify-items-center gap-3 rounded-2xl bg-card px-6 py-14">
+      <KeyRound className="size-5 text-foreground/30" />
+      <p className="text-sm text-muted-foreground">{t.apiKeys.none}</p>
+    </div>
   )
 }
 
 function NewKeyDialog({ appId, onCreated }: { appId: number; onCreated: (plaintext: string) => void }) {
   const [open, setOpen] = useState(false)
   const [name, setName] = useState('')
-  const createKey = useCreateApiKey(appId)
+  const queryClient = useQueryClient()
+  const createKey = useMutation(createApiKeyMutationOptions({ appId, queryClient }))
+  const t = useT()
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <Button variant="outline">
-          <Plus /> New key
+          <Plus /> {t.apiKeys.newKey}
         </Button>
       </DialogTrigger>
       <DialogContent>
@@ -121,11 +179,11 @@ function NewKeyDialog({ appId, onCreated }: { appId: number; onCreated: (plainte
         >
           <DialogHeader>
             <KeyRound className="size-5 text-muted-foreground" />
-            <DialogTitle>New API key</DialogTitle>
-            <DialogDescription>Name it after where it will live, e.g. the CI repository.</DialogDescription>
+            <DialogTitle>{t.apiKeys.newTitle}</DialogTitle>
+            <DialogDescription>{t.apiKeys.newDescription}</DialogDescription>
           </DialogHeader>
           <div className="grid gap-2 py-4">
-            <Label htmlFor="key-name">Name</Label>
+            <Label htmlFor="key-name">{t.apiKeys.name}</Label>
             <Input
               id="key-name"
               value={name}
@@ -136,7 +194,7 @@ function NewKeyDialog({ appId, onCreated }: { appId: number; onCreated: (plainte
           </div>
           <DialogFooter>
             <Button type="submit" disabled={createKey.isPending}>
-              Create key
+              {t.apiKeys.createKey}
             </Button>
           </DialogFooter>
         </form>

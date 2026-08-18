@@ -1,9 +1,25 @@
 import { QueryClientProvider, type QueryClient } from '@tanstack/react-query'
 import { HeadContent, Outlet, Scripts, createRootRouteWithContext, useRouteContext } from '@tanstack/react-router'
+import { NuqsAdapter } from 'nuqs/adapters/tanstack-router'
 import type { ReactNode } from 'react'
+import { getLocalePreference, localeTags, type Locale } from '~/lib/i18n/index.ts'
+import { I18nProvider } from '~/lib/i18n/provider.tsx'
+import { ViewRoleProvider } from '~/lib/role-provider.tsx'
+import { THEME_INLINE_SCRIPT, type Theme } from '~/lib/theme.ts'
+import { getRolePreference } from '~/server/role-fn.ts'
+import { getThemePreference } from '~/server/theme-fn.ts'
+import { Toaster } from '~/components/ui/sonner.tsx'
 import appCss from '~/styles.css?url'
 
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
+  // Locale, theme and view role are per-browser cookies; once read during SSR
+  // they are owned by client-side state, so the loader never needs to re-run.
+  staleTime: Infinity,
+  loader: async () => ({
+    locale: await getLocalePreference(),
+    theme: await getThemePreference(),
+    role: await getRolePreference(),
+  }),
   head: () => ({
     meta: [
       { charSet: 'utf-8' },
@@ -16,12 +32,9 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { rel: 'icon', href: '/favicon.svg' },
     ],
     scripts: [
-      // Follow the OS theme before first paint; class strategy keeps Tailwind's
-      // dark: variant and avoids a flash on load.
-      {
-        children:
-          "(function(){var m=matchMedia('(prefers-color-scheme: dark)');var s=function(){document.documentElement.classList.toggle('dark',m.matches)};s();m.addEventListener('change',s)})()",
-      },
+      // Cookie-aware pre-paint theme resolver from ~/lib/theme.ts: a pinned
+      // cookie wins; without one the OS preference is followed live.
+      { children: THEME_INLINE_SCRIPT },
     ],
   }),
   component: RootComponent,
@@ -29,23 +42,42 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 
 function RootComponent() {
   const { queryClient } = useRouteContext({ from: Route.id })
+  const { locale, theme, role } = Route.useLoaderData()
   return (
-    <RootDocument>
+    <RootDocument locale={locale} theme={theme}>
       <QueryClientProvider client={queryClient}>
-        <Outlet />
+        <I18nProvider initialLocale={locale}>
+          <ViewRoleProvider initialRole={role}>
+            <NuqsAdapter>
+              <Outlet />
+            </NuqsAdapter>
+          </ViewRoleProvider>
+        </I18nProvider>
       </QueryClientProvider>
     </RootDocument>
   )
 }
 
-function RootDocument({ children }: Readonly<{ children: ReactNode }>) {
+function RootDocument({
+  locale,
+  theme,
+  children,
+}: Readonly<{ locale: Locale; theme: Theme | null; children: ReactNode }>) {
+  // A pinned theme renders its class/color-scheme in the first HTML; without
+  // one (follow the system) the inline script resolves theme before paint.
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html
+      lang={localeTags[locale]}
+      className={theme === 'dark' ? 'dark' : undefined}
+      style={{ colorScheme: theme ?? undefined }}
+      suppressHydrationWarning
+    >
       <head>
         <HeadContent />
       </head>
       <body>
         {children}
+        <Toaster />
         <Scripts />
       </body>
     </html>

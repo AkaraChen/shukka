@@ -1,3 +1,4 @@
+import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { Boxes } from 'lucide-react'
 import {
@@ -9,15 +10,17 @@ import {
   SidebarMenuItem,
 } from '~/components/ui/sidebar'
 import { Skeleton } from '~/components/ui/skeleton'
-import { useApps } from './queries.ts'
+import { useT } from '~/lib/i18n/index.ts'
+import { appsQueryOptions } from './requests/apps.ts'
 
 /** Live list of managed apps, so switching between them stays one click away. */
 export function AppNav() {
-  const { data: apps, isPending } = useApps()
+  const { data: apps, isPending } = useQuery(appsQueryOptions())
+  const t = useT()
 
   return (
     <SidebarGroup className="group-data-[collapsible=icon]:hidden">
-      <SidebarGroupLabel>Your apps</SidebarGroupLabel>
+      <SidebarGroupLabel>{t.nav.yourApps}</SidebarGroupLabel>
       <SidebarGroupContent>
         <SidebarMenu>
           {isPending ? (
@@ -37,7 +40,7 @@ export function AppNav() {
               </SidebarMenuItem>
             ))
           ) : (
-            <p className="px-2 py-1 text-xs text-muted-foreground">No apps yet.</p>
+            <p className="px-2 py-1 text-xs text-muted-foreground">{t.nav.noApps}</p>
           )}
         </SidebarMenu>
       </SidebarGroupContent>

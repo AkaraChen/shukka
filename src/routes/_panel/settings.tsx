@@ -1,3 +1,4 @@
+import { useMutation } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { Check } from 'lucide-react'
 import { useState } from 'react'
@@ -5,14 +6,16 @@ import { PageHeader } from '~/components/page-header.tsx'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
-import { ApiError, api } from '~/lib/api.ts'
+import { changePasswordMutationOptions } from '~/features/auth/requests/session.ts'
+import { translateError, useT } from '~/lib/i18n/index.ts'
 
 export const Route = createFileRoute('/_panel/settings')({ component: SettingsPage })
 
 function SettingsPage() {
+  const t = useT()
   return (
     <>
-      <PageHeader title="Settings" />
+      <PageHeader title={t.settings.title} />
       <PasswordCard />
     </>
   )
@@ -21,41 +24,39 @@ function SettingsPage() {
 const passwordFormId = 'change-password'
 
 function PasswordCard() {
+  const t = useT()
   const [status, setStatus] = useState<{ kind: 'error' | 'success'; message: string } | null>(null)
-  const [pending, setPending] = useState(false)
+  const changePassword = useMutation(changePasswordMutationOptions())
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const form = event.currentTarget
     const data = new FormData(form)
-    setPending(true)
     setStatus(null)
     try {
-      await api.post('/api/admin/password', {
+      await changePassword.mutateAsync({
         currentPassword: String(data.get('currentPassword') ?? ''),
         newPassword: String(data.get('newPassword') ?? ''),
       })
       form.reset()
-      setStatus({ kind: 'success', message: "Password updated — you're still signed in on this session." })
+      setStatus({ kind: 'success', message: t.settings.updated })
     } catch (cause) {
-      setStatus({ kind: 'error', message: cause instanceof ApiError ? cause.message : 'Update failed' })
-    } finally {
-      setPending(false)
+      setStatus({ kind: 'error', message: translateError(t, cause, t.settings.updateFailed) })
     }
   }
 
   return (
     <section className="max-w-2xl">
-      <h2 className="text-base">Change password</h2>
-      <p className="mt-1 text-sm text-muted-foreground">Changing it signs out every other session.</p>
+      <h2 className="text-base">{t.settings.changePassword}</h2>
+      <p className="mt-1 text-sm text-muted-foreground">{t.settings.changePasswordDetail}</p>
 
       <form id={passwordFormId} onSubmit={onSubmit} className="mt-5 grid gap-5 sm:grid-cols-2">
         <div className="grid gap-2">
-          <Label htmlFor="currentPassword">Current password</Label>
+          <Label htmlFor="currentPassword">{t.settings.currentPassword}</Label>
           <Input id="currentPassword" name="currentPassword" type="password" required autoComplete="current-password" />
         </div>
         <div className="grid gap-2">
-          <Label htmlFor="newPassword">New password</Label>
+          <Label htmlFor="newPassword">{t.settings.newPassword}</Label>
           <Input
             id="newPassword"
             name="newPassword"
@@ -74,10 +75,10 @@ function PasswordCard() {
             {status.message}
           </p>
         ) : (
-          <p className="text-sm text-muted-foreground">At least 8 characters.</p>
+          <p className="text-sm text-muted-foreground">{t.auth.passwordHint}</p>
         )}
-        <Button type="submit" form={passwordFormId} disabled={pending}>
-          {pending ? 'Changing…' : 'Change password'}
+        <Button type="submit" form={passwordFormId} disabled={changePassword.isPending}>
+          {changePassword.isPending ? t.settings.changing : t.settings.changePassword}
         </Button>
       </div>
     </section>

@@ -10,6 +10,7 @@ const { db } = await import('~/db/index.ts')
 const { admin, apiKeys, apps, sessions } = await import('~/db/schema.ts')
 const auth = await import('~/lib/auth.ts')
 const { createApp } = await import('~/server/apps.ts')
+const appsServer = await import('~/server/apps.ts')
 const { ShukkaError } = await import('~/lib/errors.ts')
 
 function makeApp(slug: string) {
@@ -128,5 +129,19 @@ describe('api keys', () => {
     const { plaintext, row } = keyFor(app.id)
     auth.authenticateApiKey(bearer(plaintext), 'acme')
     expect(db.select().from(apiKeys).all().find((key) => key.id === row.id)?.lastUsedAt).toBeTypeOf('number')
+  })
+
+  it('deletes only revoked keys', async () => {
+    const app = await makeApp('acme')
+    const { row } = keyFor(app.id)
+
+    // A live key cannot be hard-deleted.
+    expect(() => appsServer.deleteApiKey(app.id, row.id)).toThrow(/Only revoked/)
+    expect(db.select().from(apiKeys).all().some((key) => key.id === row.id)).toBe(true)
+
+    // Once revoked, it can be deleted.
+    appsServer.revokeApiKey(app.id, row.id)
+    appsServer.deleteApiKey(app.id, row.id)
+    expect(db.select().from(apiKeys).all().some((key) => key.id === row.id)).toBe(false)
   })
 })

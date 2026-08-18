@@ -138,4 +138,71 @@
     @apply font-normal;
     letter-spacing: -0.0125em;
   }
+
+  /*
+   * Shiki dual-theme blocks: the emitted pre carries both themes as CSS vars;
+   * pick per .dark, and let long lines wrap instead of scrolling.
+   */
+  .shiki-block pre {
+    background-color: var(--card) !important;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  /* Shiki dual themes: light colors are inline styles, dark lives in --shiki-dark. */
+  .dark .shiki-block .shiki,
+  .dark .shiki-block .shiki span {
+    color: var(--shiki-dark) !important;
+  }
+}
+
+/*
+ * Milkdown Crepe theming: only its structure stylesheet is imported, colors
+ * and fonts map onto the app tokens here, so the editor follows the active
+ * theme for free (the tokens themselves flip under .dark). Unlayered on
+ * purpose — @layer base would lose to crepe's unlayered defaults; the doubled
+ * class settles order among unlayered rules.
+ */
+.milkdown.milkdown {
+  --crepe-color-background: transparent;
+  --crepe-color-on-background: var(--foreground);
+  --crepe-color-surface: var(--card);
+  --crepe-color-surface-low: var(--muted);
+  --crepe-color-on-surface: var(--foreground);
+  --crepe-color-on-surface-variant: var(--muted-foreground);
+  --crepe-color-outline: var(--border);
+  --crepe-color-primary: var(--flare);
+  --crepe-color-secondary: var(--accent);
+  --crepe-color-on-secondary: var(--accent-foreground);
+  --crepe-color-inverse: var(--ink);
+  --crepe-color-on-inverse: var(--paper);
+  --crepe-color-inline-code: var(--flare);
+  --crepe-color-error: var(--destructive);
+  --crepe-color-hover: var(--accent);
+  --crepe-color-selected: var(--accent);
+  --crepe-color-inline-area: var(--muted);
+  --crepe-font-title: var(--font-sans);
+  --crepe-font-default: var(--font-sans);
+  --crepe-font-code: var(--font-mono);
+  /* Flat design system: floating UI separates via hairline borders. */
+  --crepe-shadow-1: none;
+  --crepe-shadow-2: none;
+}
+
+/* Crepe's document-page padding (60px 120px) is meant for standalone
+   editors; inside the card the wrapper already provides the spacing. */
+.milkdown.milkdown .ProseMirror {
+  padding: 0;
+}
+
+/* Sonner toasts on the app tokens; flat like the rest of the system. */
+[data-sonner-toaster][data-sonner-toaster] {
+  --normal-bg: var(--popover);
+  --normal-border: var(--border);
+  --normal-text: var(--popover-foreground);
+  font-family: var(--font-sans);
+}
+
+[data-sonner-toast][data-sonner-toast] {
+  border-radius: var(--radius-xl);
+  box-shadow: none;
 }

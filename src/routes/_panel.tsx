@@ -1,7 +1,10 @@
-import { Link, Outlet, createFileRoute, redirect, useRouter } from '@tanstack/react-router'
-import { LogOut, Package, Settings } from 'lucide-react'
-import { PackageIcon } from '~/components/brand.tsx'
+import { Link, Outlet, createFileRoute, redirect } from '@tanstack/react-router'
+import { Package } from 'lucide-react'
+import { useRef } from 'react'
+import { AnimatedPackageIcon, type AnimatedPackageIconHandle } from '~/components/brand.tsx'
+import { PageHeaderSlot } from '~/components/page-header.tsx'
 import { AppNav } from '~/features/apps/app-nav.tsx'
+import { RoleMenu } from '~/features/panel/role-menu.tsx'
 import {
   Sidebar,
   SidebarContent,
@@ -16,7 +19,7 @@ import {
   SidebarProvider,
   SidebarTrigger,
 } from '~/components/ui/sidebar'
-import { api } from '~/lib/api.ts'
+import { useT } from '~/lib/i18n/index.ts'
 import { getSessionState } from '~/server/session-fn.ts'
 
 export const Route = createFileRoute('/_panel')({
@@ -29,12 +32,8 @@ export const Route = createFileRoute('/_panel')({
 })
 
 function PanelLayout() {
-  const router = useRouter()
-
-  async function signOut() {
-    await api.post('/api/admin/logout')
-    await router.navigate({ to: '/login' })
-  }
+  const t = useT()
+  const brandIconRef = useRef<AnimatedPackageIconHandle>(null)
 
   return (
     <SidebarProvider>
@@ -42,10 +41,12 @@ function PanelLayout() {
         <SidebarHeader className="p-0">
           <Link
             to="/apps"
-            aria-label="Shukka — all apps"
+            aria-label={t.nav.allApps}
+            onMouseEnter={() => brandIconRef.current?.play()}
+            onMouseLeave={() => brandIconRef.current?.reset()}
             className="flex h-12 w-full items-center gap-2.5 px-4 text-sidebar-foreground outline-hidden transition-colors hover:text-muted-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sidebar-ring group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0"
           >
-            <PackageIcon className="size-5 shrink-0" />
+            <AnimatedPackageIcon ref={brandIconRef} className="size-5" />
             <span className="text-base group-data-[collapsible=icon]:hidden">Shukka</span>
           </Link>
         </SidebarHeader>
@@ -55,10 +56,10 @@ function PanelLayout() {
             <SidebarGroupContent>
               <SidebarMenu>
                 <SidebarMenuItem>
-                  <SidebarMenuButton asChild tooltip="Apps">
+                  <SidebarMenuButton asChild tooltip={t.nav.apps}>
                     <Link to="/apps" activeOptions={{ exact: true }} activeProps={{ 'data-active': true }}>
                       <Package />
-                      <span>Apps</span>
+                      <span>{t.nav.apps}</span>
                     </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
@@ -72,28 +73,22 @@ function PanelLayout() {
         <SidebarFooter>
           <SidebarMenu>
             <SidebarMenuItem>
-              <SidebarMenuButton asChild tooltip="Settings">
-                <Link to="/settings" activeProps={{ 'data-active': true }}>
-                  <Settings />
-                  <span>Settings</span>
-                </Link>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-            <SidebarMenuItem>
-              <SidebarMenuButton onClick={signOut} tooltip="Sign out">
-                <LogOut />
-                <span>Sign out</span>
-              </SidebarMenuButton>
+              <RoleMenu />
             </SidebarMenuItem>
           </SidebarMenu>
         </SidebarFooter>
       </Sidebar>
 
       <SidebarInset>
-        <header className="flex h-12 shrink-0 items-center px-3">
-          <SidebarTrigger />
-        </header>
-        <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-8 px-6 pt-2 pb-16">
+        <div className="sticky top-0 z-10 bg-background/80 backdrop-blur-sm">
+          <header className="flex h-12 shrink-0 items-center px-3">
+            <SidebarTrigger aria-label={t.nav.toggleSidebar} title={t.nav.toggleSidebar} />
+          </header>
+          <div className="mx-auto w-full max-w-5xl px-5">
+            <PageHeaderSlot />
+          </div>
+        </div>
+        <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 px-5 pb-12">
           <Outlet />
         </div>
       </SidebarInset>

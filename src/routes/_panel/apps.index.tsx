@@ -1,26 +1,37 @@
+import { useQuery } from '@tanstack/react-query'
 import { Link, createFileRoute } from '@tanstack/react-router'
 import { ChevronRight, Plus } from 'lucide-react'
 import { PackageIcon } from '~/components/brand.tsx'
 import { PageHeader } from '~/components/page-header.tsx'
-import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Skeleton } from '~/components/ui/skeleton'
-import { useApps } from '~/features/apps/queries.ts'
-import { formatWhen } from '~/lib/format.ts'
+import { appsQueryOptions, primeAppsQuery } from '~/features/apps/requests/apps.ts'
+import { useFormatters, useT } from '~/lib/i18n/index.ts'
+import { useViewRole } from '~/lib/role-context.ts'
+import { canCreateApp } from '~/lib/role.ts'
 
-export const Route = createFileRoute('/_panel/apps/')({ component: AppsPage })
+export const Route = createFileRoute('/_panel/apps/')({
+  loader: ({ context }) => primeAppsQuery(context.queryClient),
+  component: AppsPage,
+})
 
 function AppsPage() {
-  const { data: apps, isPending } = useApps()
+  const initialData = Route.useLoaderData()
+  const { data: apps, isPending } = useQuery({ ...appsQueryOptions(), initialData })
+  const t = useT()
+  const format = useFormatters()
+  const role = useViewRole()
 
   return (
     <>
-      <PageHeader title="Apps">
-        <Button asChild>
-          <Link to="/apps/new">
-            <Plus /> New app
-          </Link>
-        </Button>
+      <PageHeader title={t.apps.title}>
+        {canCreateApp(role) ? (
+          <Button asChild>
+            <Link to="/apps/new">
+              <Plus /> {t.apps.newApp}
+            </Link>
+          </Button>
+        ) : null}
       </PageHeader>
 
       {isPending ? (
@@ -37,31 +48,16 @@ function AppsPage() {
                 >
                   <div className="min-w-0 flex-1">
                     <p className="truncate">{app.name}</p>
-                    <p className="mt-0.5 truncate font-mono text-xs text-muted-foreground">{app.slug}</p>
-                  </div>
-
-                  <div className="hidden max-w-72 flex-wrap justify-end gap-1.5 md:flex">
-                    {app.channels.map((channel) => (
-                      <Badge key={channel.id} variant="secondary" className="font-mono font-normal">
-                        {channel.currentVersion ? `${channel.name} v${channel.currentVersion}` : channel.name}
-                      </Badge>
-                    ))}
+                    <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                      {app.lastReleasedAt
+                        ? `${t.apps.lastRelease} ${format.when(app.lastReleasedAt)}`
+                        : t.apps.noReleases}
+                    </p>
                   </div>
 
                   <div className="hidden w-24 text-right sm:block">
                     <p className="text-sm tabular-nums">{app.totalDownloads}</p>
-                    <p className="text-xs text-muted-foreground">downloads</p>
-                  </div>
-
-                  <div className="hidden w-32 text-right lg:block">
-                    {app.lastReleasedAt ? (
-                      <>
-                        <p className="text-sm">{formatWhen(app.lastReleasedAt)}</p>
-                        <p className="text-xs text-muted-foreground">last release</p>
-                      </>
-                    ) : (
-                      <p className="text-sm text-muted-foreground">no releases</p>
-                    )}
+                    <p className="text-xs text-muted-foreground">{t.apps.downloads}</p>
                   </div>
 
                   <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
@@ -78,20 +74,19 @@ function AppsPage() {
 }
 
 function FirstRun() {
+  const t = useT()
+  const role = useViewRole()
   const steps = [
-    ['Create an app', 'Name it and point it at an S3 bucket — AWS, R2, and MinIO all work.'],
-    ['Create an API key', 'One key per repository; it can only publish to its own app.'],
-    ['Publish from CI', 'One workflow step uploads the electron-builder output as a release.'],
+    [t.apps.firstRun.step1Title, t.apps.firstRun.step1Detail],
+    [t.apps.firstRun.step2Title, t.apps.firstRun.step2Detail],
+    [t.apps.firstRun.step3Title, t.apps.firstRun.step3Detail],
   ] as const
 
   return (
     <div className="rounded-2xl bg-card px-8 py-12">
       <PackageIcon className="size-8 text-muted-foreground" />
-      <h2 className="mt-5 text-lg">Ship your first update</h2>
-      <p className="mt-1 max-w-md text-sm text-muted-foreground">
-        Shukka serves electron-updater feeds straight from your own storage. Three steps to a working update
-        pipeline:
-      </p>
+      <h2 className="mt-5 text-lg">{t.apps.firstRun.title}</h2>
+      <p className="mt-1 max-w-md text-sm text-muted-foreground">{t.apps.firstRun.description}</p>
       <ol className="mt-8 max-w-lg space-y-5">
         {steps.map(([title, detail], index) => (
           <li key={title} className="flex gap-4">
@@ -103,11 +98,13 @@ function FirstRun() {
           </li>
         ))}
       </ol>
-      <Button asChild className="mt-8">
-        <Link to="/apps/new">
-          <Plus /> Create your first app
-        </Link>
-      </Button>
+      {canCreateApp(role) ? (
+        <Button asChild className="mt-8">
+          <Link to="/apps/new">
+            <Plus /> {t.apps.firstRun.cta}
+          </Link>
+        </Button>
+      ) : null}
     </div>
   )
 }
