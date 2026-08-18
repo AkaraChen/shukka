@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link, createFileRoute } from '@tanstack/react-router'
-import { ChevronRight, Plus } from 'lucide-react'
+import { Plus } from 'lucide-react'
 import { PackageIcon } from '~/components/brand.tsx'
 import { PageHeader } from '~/components/page-header.tsx'
 import { Button } from '~/components/ui/button'
@@ -35,37 +35,36 @@ function AppsPage() {
       </PageHeader>
 
       {isPending ? (
-        <Skeleton className="h-48 rounded-xl" />
+        <ul className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {Array.from({ length: 3 }, (_, index) => (
+            <li key={index}>
+              <Skeleton className="h-28 rounded-2xl" />
+            </li>
+          ))}
+        </ul>
       ) : apps?.length ? (
-        <div className="overflow-hidden rounded-2xl bg-card">
-          <ul className="divide-y">
-            {apps.map((app) => (
-              <li key={app.id}>
-                <Link
-                  to="/apps/$appId"
-                  params={{ appId: String(app.id) }}
-                  className="flex items-center gap-6 px-5 py-4 transition-colors hover:bg-accent/60"
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate">{app.name}</p>
-                    <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                      {app.lastReleasedAt
-                        ? `${t.apps.lastRelease} ${format.when(app.lastReleasedAt)}`
-                        : t.apps.noReleases}
-                    </p>
-                  </div>
-
-                  <div className="hidden w-24 text-right sm:block">
-                    <p className="text-sm tabular-nums">{app.totalDownloads}</p>
-                    <p className="text-xs text-muted-foreground">{t.apps.downloads}</p>
-                  </div>
-
-                  <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </div>
+        <ul className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {apps.map((app) => (
+            <li key={app.id}>
+              <Link
+                to="/apps/$appId"
+                params={{ appId: String(app.id) }}
+                className="flex h-full flex-col rounded-2xl bg-card px-5 py-5 transition-colors hover:bg-accent/60"
+              >
+                <p className="truncate">{app.name}</p>
+                <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                  {app.lastReleasedAt
+                    ? `${t.apps.lastRelease} ${format.when(app.lastReleasedAt)}`
+                    : t.apps.noReleases}
+                </p>
+                <div className="mt-5">
+                  <p className="text-sm tabular-nums">{app.totalDownloads}</p>
+                  <p className="text-xs text-muted-foreground">{t.apps.downloads}</p>
+                </div>
+              </Link>
+            </li>
+          ))}
+        </ul>
       ) : (
         <FirstRun />
       )}
