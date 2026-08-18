@@ -8,7 +8,7 @@
 
 - 每个 app 独立保存 endpoint、region、bucket、key prefix、access key id、secret access key、force path style 开关。
 - secret access key 用 AES-256-GCM 加密后存 SQLite；加密密钥首次启动自动生成，存数据目录 `data/`（与数据库同卷），不要求额外环境变量。
-- 创建/编辑 app 时做一次 S3 写探测（Put+Delete 一个探针对象），失败则拒绝保存。
+- 创建/编辑 app 时做一次 S3 写探测（Put+Delete 一个探针对象），失败则拒绝保存；同一探测也经 `POST /api/admin/storage/test` 暴露给面板的「测试连接」按钮（不落库）。
 
 ## Alternatives
 

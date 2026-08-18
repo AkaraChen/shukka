@@ -1,120 +1,198 @@
 import { useState } from 'react'
 import type { ReactNode } from 'react'
+import { Check } from 'lucide-react'
 import { Button } from '~/components/ui/button'
-import { Input } from '~/components/ui/input'
-import { Label } from '~/components/ui/label'
-import { ApiError } from '~/lib/api.ts'
-import type { AppFormValues } from './queries.ts'
+import { useMutation } from '@tanstack/react-query'
+import { translateError, useT } from '~/lib/i18n/index.ts'
+import { Field } from './field.tsx'
+import { testStorageMutationOptions } from './requests/apps.ts'
+import type { AppFormValues } from './requests/apps.ts'
 
 type AppFormProps = {
   initial?: Partial<AppFormValues>
   submitLabel: string
   /** Editing keeps the stored secret when the field is left blank. */
   secretOptional?: boolean
+  /** Only the named section renders; the settings page switches sections via the URL. */
+  section: 'general' | 'storage'
   onSubmit: (values: AppFormValues) => Promise<unknown>
 }
 
-export function AppForm({ initial, submitLabel, secretOptional, onSubmit }: AppFormProps) {
+export function AppForm({ initial, submitLabel, secretOptional, section, onSubmit }: AppFormProps) {
+  const t = useT()
   const [error, setError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
+  const [tested, setTested] = useState(false)
+  const testStorage = useMutation(testStorageMutationOptions())
+
+  function readValues(form: HTMLFormElement): AppFormValues {
+    const data = new FormData(form)
+    // Sections render disjoint field sets; fields absent from the DOM keep their initial values.
+    const text = (key: string) => (data.has(key) ? String(data.get(key) ?? '') : undefined)
+    const endpoint = text('s3Endpoint')?.trim()
+    const secret = text('s3SecretAccessKey')
+    return {
+      name: text('name') ?? initial?.name ?? '',
+      slug: text('slug') ?? initial?.slug ?? '',
+      s3Endpoint: endpoint !== undefined ? endpoint || null : (initial?.s3Endpoint ?? null),
+      s3Region: text('s3Region') ?? initial?.s3Region ?? '',
+      s3Bucket: text('s3Bucket') ?? initial?.s3Bucket ?? '',
+      s3Prefix: text('s3Prefix') ?? initial?.s3Prefix ?? '',
+      s3AccessKeyId: text('s3AccessKeyId') ?? initial?.s3AccessKeyId ?? '',
+      s3SecretAccessKey: secret || undefined,
+      s3ForcePathStyle: data.has('s3ForcePathStyle')
+        ? data.get('s3ForcePathStyle') === 'on'
+        : (initial?.s3ForcePathStyle ?? false),
+    }
+  }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    const form = new FormData(event.currentTarget)
-    const secret = String(form.get('s3SecretAccessKey') ?? '')
-    const endpoint = String(form.get('s3Endpoint') ?? '').trim()
+    const values = readValues(event.currentTarget)
 
     setPending(true)
     setError(null)
     try {
-      await onSubmit({
-        name: String(form.get('name') ?? ''),
-        slug: String(form.get('slug') ?? ''),
-        s3Endpoint: endpoint || null,
-        s3Region: String(form.get('s3Region') ?? ''),
-        s3Bucket: String(form.get('s3Bucket') ?? ''),
-        s3Prefix: String(form.get('s3Prefix') ?? ''),
-        s3AccessKeyId: String(form.get('s3AccessKeyId') ?? ''),
-        s3SecretAccessKey: secret || undefined,
-        s3ForcePathStyle: form.get('s3ForcePathStyle') === 'on',
-      })
+      await onSubmit(values)
     } catch (cause) {
-      setError(cause instanceof ApiError ? cause.message : 'Request failed')
+      setError(translateError(t, cause, t.common.requestFailed))
+    } finally {
+      setPending(false)
+    }
+  }
+
+  async function handleTest(event: React.MouseEvent<HTMLButtonElement>) {
+    const form = event.currentTarget.form
+    if (!form) return
+    const values = readValues(form)
+    if (!values.s3SecretAccessKey) {
+      setError(t.form.secretRequiredForTest)
+      return
+    }
+
+    setPending(true)
+    setError(null)
+    try {
+      const { name: _name, slug: _slug, ...storageValues } = values
+      await testStorage.mutateAsync({ ...storageValues, s3SecretAccessKey: values.s3SecretAccessKey })
+      setTested(true)
+    } catch (cause) {
+      setTested(false)
+      setError(translateError(t, cause, t.common.requestFailed))
     } finally {
       setPending(false)
     }
   }
 
   return (
-    <form onSubmit={handleSubmit} className="max-w-2xl rounded-2xl bg-card p-6 md:p-8">
-      <FormSection title="General" detail="How the app appears in the panel and in feed URLs." first>
-        <Field name="name" label="App name" defaultValue={initial?.name} required placeholder="Acme Desktop" />
-        <Field
-          name="slug"
-          label="Slug"
-          defaultValue={initial?.slug}
-          required
-          placeholder="acme-desktop"
-          hint="Used in feed URLs: /api/update/{slug}/{channel}"
-        />
-      </FormSection>
-
-      <FormSection
-        title="Storage"
-        detail="Artifacts upload straight to this bucket and download from it — Shukka never proxies the bytes."
-      >
-        <Field name="s3Bucket" label="Bucket" defaultValue={initial?.s3Bucket} required placeholder="releases" />
-        <Field name="s3Region" label="Region" defaultValue={initial?.s3Region ?? 'auto'} required placeholder="auto" />
-        <Field
-          name="s3Endpoint"
-          label="Endpoint"
-          defaultValue={initial?.s3Endpoint ?? ''}
-          placeholder="https://<account>.r2.cloudflarestorage.com"
-          hint="Leave empty for AWS S3."
-          className="sm:col-span-2"
-        />
-        <Field
-          name="s3Prefix"
-          label="Key prefix"
-          defaultValue={initial?.s3Prefix ?? ''}
-          placeholder="acme-desktop"
-          hint="Objects land at {prefix}/{channel}/{version}/{file}."
-          className="sm:col-span-2"
-        />
-        <Field
-          name="s3AccessKeyId"
-          label="Access key ID"
-          defaultValue={initial?.s3AccessKeyId}
-          required
-          autoComplete="off"
-        />
-        <Field
-          name="s3SecretAccessKey"
-          label="Secret access key"
-          type="password"
-          required={!secretOptional}
-          autoComplete="new-password"
-          hint={secretOptional ? 'Leave blank to keep the stored secret.' : undefined}
-        />
-        <label className="flex items-center gap-2.5 text-sm sm:col-span-2">
-          <input
-            type="checkbox"
-            name="s3ForcePathStyle"
-            defaultChecked={initial?.s3ForcePathStyle}
-            className="size-4 accent-primary"
+    <form onSubmit={handleSubmit}>
+      {section === 'general' ? (
+        <FormSection title={t.form.general} detail={t.form.generalDetail}>
+          <Field
+            name="name"
+            label={t.form.appName}
+            defaultValue={initial?.name}
+            required
+            placeholder="Acme Desktop"
+            hint={t.form.appNameHint}
           />
-          Force path-style addressing
-          <span className="text-muted-foreground">— MinIO, some S3-compatibles</span>
-        </label>
-      </FormSection>
+          <Field
+            name="slug"
+            label={t.form.slug}
+            defaultValue={initial?.slug}
+            required
+            placeholder="acme-desktop"
+            hint={t.form.slugUsage}
+          />
+        </FormSection>
+      ) : null}
 
-      <div className="mt-8 flex items-center gap-4">
-        <Button type="submit" disabled={pending}>
-          {pending ? 'Verifying bucket…' : submitLabel}
-        </Button>
-        <p className={error ? 'text-sm text-destructive' : 'text-xs text-muted-foreground'}>
-          {error ?? 'Saving writes and deletes a probe object to confirm the credentials work.'}
-        </p>
+      {section === 'storage' ? (
+        <FormSection title={t.form.storage} detail={t.form.storageDetail}>
+          <Field
+            name="s3Bucket"
+            label={t.form.bucket}
+            defaultValue={initial?.s3Bucket}
+            required
+            placeholder="releases"
+            tooltip={t.form.bucketTooltip}
+          />
+          <Field
+            name="s3Region"
+            label={t.form.region}
+            defaultValue={initial?.s3Region ?? 'auto'}
+            required
+            placeholder="auto"
+            tooltip={t.form.regionTooltip}
+          />
+          <Field
+            name="s3Endpoint"
+            label={t.form.endpoint}
+            defaultValue={initial?.s3Endpoint ?? ''}
+            placeholder="https://<account>.r2.cloudflarestorage.com"
+            hint={t.form.endpointAwsHint}
+            tooltip={t.form.endpointOtherTooltip}
+            className="sm:col-span-2"
+          />
+          <Field
+            name="s3Prefix"
+            label={t.form.keyPrefix}
+            defaultValue={initial?.s3Prefix ?? ''}
+            placeholder="acme-desktop"
+            hint={t.form.keyPrefixHint}
+            tooltip={t.form.keyPrefixTooltip}
+            className="sm:col-span-2"
+          />
+          <Field
+            name="s3AccessKeyId"
+            label={t.form.accessKeyId}
+            defaultValue={initial?.s3AccessKeyId}
+            required
+            autoComplete="off"
+            tooltip={t.form.accessKeyTooltip}
+          />
+          <Field
+            name="s3SecretAccessKey"
+            label={t.form.secretAccessKey}
+            type="password"
+            required={!secretOptional}
+            autoComplete="new-password"
+            hint={secretOptional ? t.form.secretKeepHint : undefined}
+            tooltip={t.form.secretTooltip}
+            onChange={() => setTested(false)}
+          />
+          <label className="flex items-center gap-2.5 text-sm sm:col-span-2">
+            <input
+              type="checkbox"
+              name="s3ForcePathStyle"
+              defaultChecked={initial?.s3ForcePathStyle}
+              className="size-4 accent-primary"
+            />
+            {t.form.forcePathStyle}
+            <span className="text-muted-foreground">{t.form.forcePathStyleHint}</span>
+          </label>
+        </FormSection>
+      ) : null}
+
+      <div className="mt-5 space-y-3">
+        {error ? (
+          <p className="text-sm text-destructive">{error}</p>
+        ) : tested ? (
+          <p className="flex items-center gap-1.5 text-sm text-success">
+            <Check className="size-3.5" />
+            {t.common.testPassed}
+          </p>
+        ) : secretOptional ? (
+          <p className="text-sm text-muted-foreground">{t.form.secretKeepHint}</p>
+        ) : null}
+        <div className="flex items-center gap-3">
+          <Button type="button" variant="outline" disabled={pending} onClick={handleTest}>
+            {pending ? t.common.testingConnection : t.common.testConnection}
+          </Button>
+          <Button type="submit" disabled={pending}>
+            {pending ? t.common.verifyingBucket : submitLabel}
+          </Button>
+        </div>
       </div>
     </form>
   )
@@ -124,36 +202,18 @@ export function AppForm({ initial, submitLabel, secretOptional, onSubmit }: AppF
 function FormSection({
   title,
   detail,
-  first,
   children,
 }: {
   title: string
   detail: string
-  first?: boolean
   children: ReactNode
 }) {
   return (
-    <section className={first ? undefined : 'mt-10'}>
+    <section>
       <h3 className="text-base">{title}</h3>
       <p className="mt-1 text-sm text-muted-foreground">{detail}</p>
-      <div className="mt-5 grid gap-x-4 gap-y-5 sm:grid-cols-2">{children}</div>
+      <div className="mt-5 grid items-start gap-x-4 gap-y-5 sm:grid-cols-2">{children}</div>
     </section>
   )
 }
 
-type FieldProps = {
-  name: string
-  label: string
-  hint?: string
-  className?: string
-} & React.ComponentProps<typeof Input>
-
-function Field({ name, label, hint, className, ...props }: FieldProps) {
-  return (
-    <div className={className ? `grid gap-2 ${className}` : 'grid gap-2'}>
-      <Label htmlFor={name}>{label}</Label>
-      <Input id={name} name={name} {...props} />
-      {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
-    </div>
-  )
-}

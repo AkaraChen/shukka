@@ -1,33 +1,34 @@
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, useRouter } from '@tanstack/react-router'
-import { z } from 'zod'
+import { parseAsInteger, useQueryState } from 'nuqs'
 import { PageHeader } from '~/components/page-header.tsx'
 import { AppWizard } from '~/features/apps/app-wizard.tsx'
-import { useCreateApp } from '~/features/apps/queries.ts'
+import { createAppMutationOptions } from '~/features/apps/requests/apps.ts'
+import { updateNotesConfigMutationOptions } from '~/features/apps/requests/notes.ts'
+import { useT } from '~/lib/i18n/index.ts'
 
-const searchSchema = z.object({
-  step: z.coerce.number().int().min(1).max(2).optional().catch(undefined),
-})
-
-export const Route = createFileRoute('/_panel/apps/new')({
-  component: NewAppPage,
-  validateSearch: searchSchema,
-})
+export const Route = createFileRoute('/_panel/apps/new')({ component: NewAppPage })
 
 function NewAppPage() {
   const router = useRouter()
-  const createApp = useCreateApp()
-  const { step: rawStep } = Route.useSearch()
-  const navigate = Route.useNavigate()
-  const step = (rawStep === 2 ? 2 : 1) as 1 | 2
+  const queryClient = useQueryClient()
+  const createApp = useMutation(createAppMutationOptions({ queryClient }))
+  const updateNotesConfig = useMutation(updateNotesConfigMutationOptions({ queryClient }))
+  const t = useT()
+  const [step, setStep] = useQueryState('step', parseAsInteger.withDefault(1))
 
   return (
     <>
-      <PageHeader title="New app" />
+      <PageHeader title={t.apps.newTitle} />
       <AppWizard
-        step={step}
-        onStepChange={(next) => navigate({ search: { step: next } })}
-        onSubmit={async (values) => {
+        step={step === 3 ? 3 : step === 2 ? 2 : 1}
+        onStepChange={(next) => void setStep(next)}
+        onSubmit={async (values, releaseLog) => {
           const { app } = await createApp.mutateAsync(values)
+          // Disabled is the DB default — only an enabled step 3 needs the config write.
+          if (releaseLog.enabled) {
+            await updateNotesConfig.mutateAsync({ appId: app.id, ...releaseLog })
+          }
           await router.navigate({ to: '/apps/$appId', params: { appId: String(app.id) } })
         }}
       />

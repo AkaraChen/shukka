@@ -1,24 +1,27 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
-import { ChevronRight, CircleHelp, Server } from 'lucide-react'
+import { Check, ChevronRight, Server } from 'lucide-react'
 import { siCloudflare, siMinio } from 'simple-icons'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '~/components/ui/tooltip'
 import { Button } from '~/components/ui/button'
-import { Input } from '~/components/ui/input'
-import { Label } from '~/components/ui/label'
+import { useMutation } from '@tanstack/react-query'
 import { ApiError } from '~/lib/api.ts'
+import { translateError, useT, type Dictionary } from '~/lib/i18n/index.ts'
 import { cn } from '~/lib/utils'
-import type { AppFormValues } from './queries.ts'
+import { Field } from './field.tsx'
+import { ReleaseLogConfigFields } from './release-log-fields.tsx'
+import { testStorageMutationOptions } from './requests/apps.ts'
+import type { AppFormValues } from './requests/apps.ts'
+import { DEFAULT_NOTES_CONFIG, type NotesConfig } from '~/lib/release-log.ts'
 
 /**
- * Two-step creation wizard for /apps/new: identity (name + slug), then storage
- * (provider selector with a tailored S3 field set). Provider presets are a pure
- * presentation mapping — hidden fields are filled with conventional defaults at
- * submit time and provider is never persisted. Settings keeps using AppForm.
+ * Three-step creation wizard for /apps/new: identity (name + slug), storage
+ * (provider selector with a tailored S3 field set), then release log (off by
+ * default). Provider presets are a pure presentation mapping — hidden fields
+ * are filled with conventional defaults at submit time and provider is never
+ * persisted. Settings keeps using AppForm.
  */
 
 const SLUG_PATTERN = /^[a-z0-9][a-z0-9-]{0,62}$/
-const SLUG_HINT = 'Slug must be lowercase letters, digits and dashes, starting with a letter or digit'
 
 function SimpleIcon({ path, hex, className }: { path: string; hex: string; className?: string }) {
   return (
@@ -48,12 +51,34 @@ function AWSIcon({ className }: { className?: string }) {
   )
 }
 
+/**
+ * Official JuiceFS mark (interlocking links) from juicedata/juicefs
+ * docs/en/images/juicefs-logo-new.svg (Apache-2.0); wordmark dropped for icon
+ * use. Not in simple-icons, so the two brand paths are inlined with their
+ * official fills. viewBox tightly frames the mark's own coordinate space.
+ */
+function JuiceFSIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="148 188 132 65" className={className} aria-hidden="true">
+      <path
+        fill="#A5D9AB"
+        fillRule="evenodd"
+        d="m 223.1,240.03 c 12.28,12.46 32.26,12.46 44.55,0 12.28,-12.46 12.28,-32.74 0,-45.2 l -0.44,-0.44 c -2.41,-2.45 -5.57,-3.67 -8.73,-3.67 -3.16,0 -6.32,1.22 -8.74,3.67 l -4.41,4.47 c 0.23,0.23 1.82,1.77 3.6,3.57 l 5.61,5.7 c 5.06,5.13 5.06,13.48 0,18.61 -5.06,5.13 -13.28,5.13 -18.34,0 l -31.88,-32.35 c -2.41,-2.45 -5.57,-3.67 -8.73,-3.67 -3.16,0 -6.32,1.22 -8.74,3.67 l -4.41,4.47 c 0.24,0.23 40.66,41.17 40.66,41.17 z"
+      />
+      <path
+        fill="#0ABD59"
+        fillRule="evenodd"
+        d="m 249.85,194.3 c 2.21,-2.21 5.27,-3.58 8.64,-3.58 h -26.75 c -3.55,0 -5.75,1.46 -6.73,2.29 -0.67,0.57 -1.32,1.18 -1.95,1.82 l -31.44,31.91 c -5.06,5.13 -13.29,5.13 -18.34,0 -5.06,-5.13 -5.06,-13.48 0,-18.61 l 13.69,-13.83 c 2.21,-2.21 5.27,-3.58 8.64,-3.58 h -24.43 c -3.37,0 -7.41,0.75 -11,4.11 -12.28,12.46 -12.28,32.74 0,45.2 12.28,12.46 32.26,12.46 44.55,0 l 31.44,-31.91 z"
+      />
+    </svg>
+  )
+}
+
 const PROVIDERS = [
   {
     id: 'aws',
     label: 'AWS S3',
     icon: <AWSIcon className="h-4 w-auto" />,
-    hint: 'Region-based; no endpoint to fill in.',
     showRegion: true,
     showEndpoint: false,
     showPathStyle: false,
@@ -63,7 +88,6 @@ const PROVIDERS = [
     id: 'r2',
     label: 'Cloudflare R2',
     icon: <SimpleIcon path={siCloudflare.path} hex={siCloudflare.hex} className="size-5" />,
-    hint: 'Account endpoint; region is fixed to auto.',
     showRegion: false,
     showEndpoint: true,
     showPathStyle: false,
@@ -73,7 +97,6 @@ const PROVIDERS = [
     id: 'minio',
     label: 'MinIO',
     icon: <SimpleIcon path={siMinio.path} hex={siMinio.hex} className="size-5" />,
-    hint: 'Path-style addressing; region us-east-1.',
     showRegion: false,
     showEndpoint: true,
     showPathStyle: false,
@@ -83,11 +106,19 @@ const PROVIDERS = [
     id: 'other',
     label: 'S3-compatible',
     icon: <Server className="size-4" />,
-    hint: 'The full field set, nothing hidden.',
     showRegion: true,
     showEndpoint: true,
     showPathStyle: true,
     endpointRequired: false,
+  },
+  {
+    id: 'juicefs',
+    label: 'JuiceFS',
+    icon: <JuiceFSIcon className="size-5" />,
+    showRegion: false,
+    showEndpoint: true,
+    showPathStyle: false,
+    endpointRequired: true,
   },
 ] as const
 
@@ -121,6 +152,20 @@ const ENDPOINT_PLACEHOLDER: Record<ProviderId, string> = {
   r2: 'https://<account>.r2.cloudflarestorage.com',
   minio: 'https://minio.example.com:9000',
   other: 'https://s3.example.com',
+  juicefs: 'http://localhost:9000',
+}
+
+function endpointTooltip(t: Dictionary, provider: ProviderId): string {
+  switch (provider) {
+    case 'r2':
+      return t.form.endpointR2Tooltip
+    case 'minio':
+      return t.form.endpointMinioTooltip
+    case 'juicefs':
+      return t.form.endpointJuicefsTooltip
+    default:
+      return t.form.endpointOtherTooltip
+  }
 }
 
 export function AppWizard({
@@ -128,10 +173,11 @@ export function AppWizard({
   onStepChange,
   onSubmit,
 }: {
-  step: 1 | 2
-  onStepChange: (step: 1 | 2) => void
-  onSubmit: (values: AppFormValues) => Promise<unknown>
+  step: 1 | 2 | 3
+  onStepChange: (step: 1 | 2 | 3) => void
+  onSubmit: (values: AppFormValues, releaseLog: NotesConfig) => Promise<unknown>
 }) {
+  const t = useT()
 
   const [name, setName] = useState('')
   const [slug, setSlug] = useState('')
@@ -141,8 +187,12 @@ export function AppWizard({
   const [storage, setStorage] = useState<StorageFields>(EMPTY_STORAGE)
   const [storageErrors, setStorageErrors] = useState<StorageErrors>({})
 
+  const [releaseLog, setReleaseLog] = useState<NotesConfig>(DEFAULT_NOTES_CONFIG)
+
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
+  const [tested, setTested] = useState(false)
+  const testStorage = useMutation(testStorageMutationOptions())
 
   const preset = provider ? PROVIDERS.find((entry) => entry.id === provider) : null
 
@@ -150,24 +200,29 @@ export function AppWizard({
     setStorage((prev) => ({ ...prev, [key]: value }))
     setStorageErrors((prev) => ({ ...prev, [key]: undefined }))
     setSubmitError(null)
+    setTested(false)
   }
 
   function continueToStorage() {
     const errors: IdentityErrors = {}
-    if (!name.trim()) errors.name = 'Name is required'
-    if (!SLUG_PATTERN.test(slug.trim())) errors.slug = SLUG_HINT
+    if (!name.trim()) errors.name = t.wizard.nameRequired
+    if (!SLUG_PATTERN.test(slug.trim())) errors.slug = t.wizard.slugHint
     setIdentityErrors(errors)
-    if (Object.keys(errors).length === 0) onStepChange(2)
+    if (Object.keys(errors).length > 0) return
+    // Suggest the slug as the key prefix; an explicit prefix edit survives
+    // going back and forth between the steps.
+    if (!storage.prefix) setStorage((prev) => ({ ...prev, prefix: slug.trim() }))
+    onStepChange(2)
   }
 
   function validateStorage(): StorageErrors {
     const errors: StorageErrors = {}
     if (!preset) return errors
-    if (!storage.bucket.trim()) errors.bucket = 'Bucket is required'
-    if (preset.showRegion && !storage.region.trim()) errors.region = 'Region is required'
-    if (preset.endpointRequired && !storage.endpoint.trim()) errors.endpoint = 'Endpoint is required'
-    if (!storage.accessKeyId.trim()) errors.accessKeyId = 'Access key ID is required'
-    if (!storage.secretAccessKey) errors.secretAccessKey = 'Secret access key is required'
+    if (!storage.bucket.trim()) errors.bucket = t.wizard.bucketRequired
+    if (preset.showRegion && !storage.region.trim()) errors.region = t.wizard.regionRequired
+    if (preset.endpointRequired && !storage.endpoint.trim()) errors.endpoint = t.wizard.endpointRequired
+    if (!storage.accessKeyId.trim()) errors.accessKeyId = t.wizard.accessKeyRequired
+    if (!storage.secretAccessKey) errors.secretAccessKey = t.wizard.secretRequired
     return errors
   }
 
@@ -187,6 +242,9 @@ export function AppWizard({
         return { ...base, s3Endpoint: storage.endpoint.trim(), s3Region: 'auto', s3ForcePathStyle: false }
       case 'minio':
         return { ...base, s3Endpoint: storage.endpoint.trim(), s3Region: 'us-east-1', s3ForcePathStyle: true }
+      case 'juicefs':
+        // The JuiceFS S3 gateway ignores region; the SDK requires some value. Path style is implied.
+        return { ...base, s3Endpoint: storage.endpoint.trim(), s3Region: 'us-east-1', s3ForcePathStyle: true }
       default:
         return {
           ...base,
@@ -201,22 +259,36 @@ export function AppWizard({
   function mapSubmitError(cause: unknown) {
     if (cause instanceof ApiError) {
       if (cause.code === 'conflict' || (cause.code === 'invalid_request' && /slug/i.test(cause.message))) {
-        setIdentityErrors((prev) => ({ ...prev, slug: cause.message }))
+        setIdentityErrors((prev) => ({ ...prev, slug: translateError(t, cause, t.common.requestFailed) }))
         onStepChange(1)
         return
       }
       if (cause.code === 'invalid_request' && /name/i.test(cause.message)) {
-        setIdentityErrors((prev) => ({ ...prev, name: cause.message }))
+        setIdentityErrors((prev) => ({ ...prev, name: translateError(t, cause, t.common.requestFailed) }))
         onStepChange(1)
         return
       }
-      setSubmitError(cause.message)
+      setSubmitError(translateError(t, cause, t.common.requestFailed))
       return
     }
-    setSubmitError('Request failed')
+    setSubmitError(t.common.requestFailed)
   }
 
-  async function submit() {
+  async function testConnection(): Promise<boolean> {
+    const { name: _name, slug: _slug, ...storageValues } = buildValues()
+    try {
+      await testStorage.mutateAsync(storageValues)
+      setTested(true)
+      return true
+    } catch (cause) {
+      setTested(false)
+      setSubmitError(translateError(t, cause, t.common.requestFailed))
+      return false
+    }
+  }
+
+  /** Step 2 → 3 gates on a working bucket so step 3 can't dead-end at create. */
+  async function continueToReleaseLog() {
     if (!preset) return
     const errors = validateStorage()
     setStorageErrors(errors)
@@ -225,7 +297,19 @@ export function AppWizard({
     setPending(true)
     setSubmitError(null)
     try {
-      await onSubmit(buildValues())
+      // A manual test is only a convenience — this gate and the server both re-verify.
+      if (!tested && !(await testConnection())) return
+      onStepChange(3)
+    } finally {
+      setPending(false)
+    }
+  }
+
+  async function submit() {
+    setPending(true)
+    setSubmitError(null)
+    try {
+      await onSubmit(buildValues(), releaseLog)
     } catch (cause) {
       mapSubmitError(cause)
     } finally {
@@ -236,6 +320,7 @@ export function AppWizard({
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (step === 1) continueToStorage()
+    else if (step === 2) void continueToReleaseLog()
     else void submit()
   }
 
@@ -245,14 +330,13 @@ export function AppWizard({
 
       {step === 1 ? (
         <section className="mt-8">
-          <p className="text-sm text-muted-foreground">How the app appears in the panel and in feed URLs.</p>
-          <div className="mt-5 grid gap-x-4 gap-y-5 sm:grid-cols-2">
+          <div className="grid items-start gap-x-4 gap-y-5 sm:grid-cols-2">
             <Field
               name="name"
-              label="App name"
+              label={t.form.appName}
               required
               placeholder="Acme Desktop"
-              hint="Display name in the panel."
+              hint={t.form.appNameHint}
               value={name}
               error={identityErrors.name}
               onChange={(event) => {
@@ -262,10 +346,10 @@ export function AppWizard({
             />
             <Field
               name="slug"
-              label="Slug"
+              label={t.form.slug}
               required
               placeholder="acme-desktop"
-              hint="Used in feed URLs: /api/update/{slug}/{channel}"
+              hint={t.form.slugUsage}
               value={slug}
               error={identityErrors.slug}
               onChange={(event) => {
@@ -275,12 +359,9 @@ export function AppWizard({
             />
           </div>
         </section>
-      ) : (
+      ) : step === 2 ? (
         <section className="mt-8">
-          <p className="text-sm text-muted-foreground">
-            Artifacts upload straight to this bucket and download from it — Shukka never proxies the bytes.
-          </p>
-          <div className="mt-5 flex gap-3" role="radiogroup" aria-label="Storage provider">
+          <div className="flex gap-3" role="radiogroup" aria-label={t.wizard.providerLabel}>
             {PROVIDERS.map((entry) => {
               const selected = provider === entry.id
               return (
@@ -293,6 +374,7 @@ export function AppWizard({
                     setProvider(entry.id)
                     setStorageErrors({})
                     setSubmitError(null)
+                    setTested(false)
                   }}
                   className={cn(
                     'flex flex-1 flex-col items-center justify-center gap-2 rounded-2xl bg-background px-4 py-3 text-sm outline outline-1 -outline-offset-1 outline-input transition-colors',
@@ -307,13 +389,13 @@ export function AppWizard({
           </div>
 
           {preset ? (
-            <div className="mt-6 grid gap-x-4 gap-y-5 sm:grid-cols-2">
+            <div className="mt-6 grid items-start gap-x-4 gap-y-5 sm:grid-cols-2">
               <Field
                 name="s3Bucket"
-                label="Bucket"
+                label={t.form.bucket}
                 required
                 placeholder="releases"
-                tooltip="The S3 bucket name where release artifacts are stored. Find it in your cloud console under object storage / buckets."
+                tooltip={t.form.bucketTooltip}
                 value={storage.bucket}
                 error={storageErrors.bucket}
                 onChange={(event) => updateStorage('bucket', event.target.value)}
@@ -321,10 +403,10 @@ export function AppWizard({
               {preset.showRegion ? (
                 <Field
                   name="s3Region"
-                  label="Region"
+                  label={t.form.region}
                   required
                   placeholder="us-east-1"
-                  tooltip="The AWS region your bucket lives in, e.g. us-east-1 or ap-southeast-2. Shown in the bucket details in the AWS console."
+                  tooltip={t.form.regionTooltip}
                   value={storage.region}
                   error={storageErrors.region}
                   onChange={(event) => updateStorage('region', event.target.value)}
@@ -333,17 +415,11 @@ export function AppWizard({
               {preset.showEndpoint ? (
                 <Field
                   name="s3Endpoint"
-                  label="Endpoint"
+                  label={t.form.endpoint}
                   required={preset.endpointRequired}
                   placeholder={ENDPOINT_PLACEHOLDER[preset.id]}
-                  hint={preset.id === 'other' ? 'Leave empty for AWS S3.' : undefined}
-                  tooltip={
-                    preset.id === 'r2'
-                      ? 'Your Cloudflare account endpoint. Find it in the R2 dashboard under your bucket settings — it looks like https://<account-id>.r2.cloudflarestorage.com.'
-                      : preset.id === 'minio'
-                        ? 'The URL of your MinIO server, e.g. https://minio.example.com:9000.'
-                        : 'The S3-compatible endpoint URL. Leave empty for AWS S3.'
-                  }
+                  hint={preset.id === 'other' ? t.form.endpointAwsHint : undefined}
+                  tooltip={endpointTooltip(t, preset.id)}
                   className="sm:col-span-2"
                   value={storage.endpoint}
                   error={storageErrors.endpoint}
@@ -352,31 +428,31 @@ export function AppWizard({
               ) : null}
               <Field
                 name="s3Prefix"
-                label="Key prefix"
-                placeholder="acme-desktop"
-                hint="Objects land at {prefix}/{channel}/{version}/{file}."
-                tooltip="A folder-like prefix inside the bucket to keep this app's artifacts organized. Usually the app name in kebab-case."
+                label={t.form.keyPrefix}
+                placeholder={slug.trim() || 'acme-desktop'}
+                hint={t.form.keyPrefixHint}
+                tooltip={t.form.keyPrefixTooltip}
                 className="sm:col-span-2"
                 value={storage.prefix}
                 onChange={(event) => updateStorage('prefix', event.target.value)}
               />
               <Field
                 name="s3AccessKeyId"
-                label="Access key ID"
+                label={t.form.accessKeyId}
                 required
                 autoComplete="off"
-                tooltip="An access key with read/write permission on the bucket. Create one in your cloud provider's IAM or API tokens page."
+                tooltip={t.form.accessKeyTooltip}
                 value={storage.accessKeyId}
                 error={storageErrors.accessKeyId}
                 onChange={(event) => updateStorage('accessKeyId', event.target.value)}
               />
               <Field
                 name="s3SecretAccessKey"
-                label="Secret access key"
+                label={t.form.secretAccessKey}
                 type="password"
                 required
                 autoComplete="new-password"
-                tooltip="The secret paired with the access key ID. Shown once when you create the key — if lost, generate a new pair."
+                tooltip={t.form.secretTooltip}
                 value={storage.secretAccessKey}
                 error={storageErrors.secretAccessKey}
                 onChange={(event) => updateStorage('secretAccessKey', event.target.value)}
@@ -390,37 +466,72 @@ export function AppWizard({
                     onChange={(event) => updateStorage('forcePathStyle', event.target.checked)}
                     className="size-4 accent-primary"
                   />
-                  Force path-style addressing
-                  <span className="text-muted-foreground">— MinIO, some S3-compatibles</span>
+                  {t.form.forcePathStyle}
+                  <span className="text-muted-foreground">{t.form.forcePathStyleHint}</span>
                 </label>
               ) : null}
             </div>
-          ) : (
-            <p className="mt-6 text-sm text-muted-foreground">Pick a provider to see just the fields it needs.</p>
-          )}
+          ) : null}
+        </section>
+      ) : (
+        <section className="mt-8 max-w-md">
+          <ReleaseLogConfigFields value={releaseLog} onChange={setReleaseLog} />
         </section>
       )}
 
       <div className="mt-8 flex items-center gap-4">
-        {step === 2 ? (
+        {step > 1 ? (
           <Button
             type="button"
             variant="outline"
             disabled={pending}
             onClick={() => {
-              onStepChange(1)
+              onStepChange(step === 3 ? 2 : 1)
               setSubmitError(null)
             }}
           >
-            Back
+            {t.wizard.back}
+          </Button>
+        ) : null}
+        {step === 2 && provider ? (
+          <Button
+            type="button"
+            variant="outline"
+            disabled={pending}
+            onClick={() => {
+              const errors = validateStorage()
+              setStorageErrors(errors)
+              if (Object.keys(errors).length > 0) return
+              setPending(true)
+              setSubmitError(null)
+              void testConnection().finally(() => setPending(false))
+            }}
+          >
+            {pending ? t.common.testingConnection : t.common.testConnection}
           </Button>
         ) : null}
         <Button type="submit" disabled={pending || (step === 2 && !provider)}>
-          {pending ? 'Verifying bucket…' : step === 1 ? 'Continue' : 'Create app'}
+          {pending
+            ? step === 3
+              ? t.common.verifyingBucket
+              : t.common.testingConnection
+            : step === 3
+              ? t.wizard.createApp
+              : t.wizard.continue}
         </Button>
-        {step === 2 ? (
-          <p className={submitError ? 'text-sm text-destructive' : 'text-xs text-muted-foreground'}>
-            {submitError ?? 'Saving writes and deletes a probe object to confirm the credentials work.'}
+        {step === 3 && submitError ? <p className="text-sm text-destructive">{submitError}</p> : null}
+        {step === 2 && (submitError ?? (tested ? t.common.testPassed : null)) ? (
+          <p
+            className={
+              submitError ? 'text-sm text-destructive' : 'flex items-center gap-1 text-xs text-muted-foreground'
+            }
+          >
+            {submitError ?? (
+              <>
+                <Check className="size-3.5 text-green-600 dark:text-green-500" aria-hidden />
+                {t.common.testPassed}
+              </>
+            )}
           </p>
         ) : null}
       </div>
@@ -428,8 +539,9 @@ export function AppWizard({
   )
 }
 
-function StepIndicator({ step }: { step: 1 | 2 }) {
-  const steps = ['Identity', 'Storage']
+function StepIndicator({ step }: { step: 1 | 2 | 3 }) {
+  const t = useT()
+  const steps = [t.wizard.stepIdentity, t.wizard.stepStorage, t.wizard.stepReleaseLog]
   return (
     <ol className="flex items-center gap-2.5 text-sm">
       {steps.map((label, index) => (
@@ -442,42 +554,5 @@ function StepIndicator({ step }: { step: 1 | 2 }) {
         </li>
       ))}
     </ol>
-  )
-}
-
-type FieldProps = {
-  name: string
-  label: string
-  error?: string
-  hint?: string
-  tooltip?: string
-  className?: string
-} & React.ComponentProps<typeof Input>
-
-function Field({ name, label, error, hint, tooltip, className, ...props }: FieldProps) {
-  return (
-    <div className={className ? `grid gap-2 ${className}` : 'grid gap-2'}>
-      <span className="flex items-center gap-1.5">
-        <Label htmlFor={name}>{label}</Label>
-        {tooltip ? (
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger type="button" className="text-muted-foreground/60 hover:text-muted-foreground">
-                <CircleHelp className="size-3.5" />
-              </TooltipTrigger>
-              <TooltipContent side="top" className="max-w-64">
-                {tooltip}
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-        ) : null}
-      </span>
-      <Input id={name} name={name} aria-invalid={error ? true : undefined} {...props} />
-      {error ? (
-        <p className="text-xs text-destructive">{error}</p>
-      ) : hint ? (
-        <p className="text-xs text-muted-foreground">{hint}</p>
-      ) : null}
-    </div>
   )
 }
