@@ -8,6 +8,20 @@
       "when": 1787027209663,
       "tag": "0000_giant_jazinda",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1787049815329,
+      "tag": "0001_loose_ravenous",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1787051969950,
+      "tag": "0002_fluffy_nightmare",
+      "breakpoints": true
     }
   ]
 }

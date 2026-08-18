@@ -1,0 +1,335 @@
+import './setup-db.ts'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+/** In-memory stand-in for S3, same harness as hits.test.ts. */
+const objects = new Map<string, string>()
+
+vi.mock('~/lib/storage.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('~/lib/storage.ts')>()
+  return {
+    ...actual,
+    verifyWritable: vi.fn(async () => undefined),
+    presignPut: vi.fn(async (_s3: unknown, key: string) => `https://storage.test/${key}?put`),
+    presignGet: vi.fn(async (_s3: unknown, key: string) => `https://storage.test/${key}?get`),
+    headObject: vi.fn(async (_s3: unknown, key: string) =>
+      objects.has(key) ? { size: Buffer.byteLength(objects.get(key)!) } : null,
+    ),
+    getObjectText: vi.fn(async (_s3: unknown, key: string) => objects.get(key) ?? ''),
+    deleteObjects: vi.fn(async (_s3: unknown, keys: string[]) => {
+      for (const key of keys) objects.delete(key)
+    }),
+  }
+})
+
+const { eq } = await import('drizzle-orm')
+const { db } = await import('~/db/index.ts')
+const { apps, releaseNotes } = await import('~/db/schema.ts')
+const { createApp, getApp } = await import('~/server/apps.ts')
+const { createChannel } = await import('~/server/channels.ts')
+const { deleteVersion, finalizeUpload, initUpload } = await import('~/server/releases.ts')
+const notesServer = await import('~/server/release-notes.ts')
+const { verifyWritable } = await import('~/lib/storage.ts')
+const { ShukkaError } = await import('~/lib/errors.ts')
+const notesRoute = await import('~/routes/api/v1/apps.$appSlug.channels.$channel.notes.ts')
+
+const appInput = {
+  name: 'Acme',
+  slug: 'acme',
+  s3Endpoint: null,
+  s3Region: 'us-east-1',
+  s3Bucket: 'releases',
+  s3Prefix: 'acme',
+  s3AccessKeyId: 'key',
+  s3SecretAccessKey: 'secret',
+  s3ForcePathStyle: false,
+}
+
+function metadataFor(version: string, installer: string) {
+  return `version: ${version}\nfiles:\n  - url: ${installer}\n    sha512: aaa==\n    size: 10\npath: ${installer}\n`
+}
+
+/** Runs a full init → upload → finalize cycle. */
+async function publish(app: Awaited<ReturnType<typeof createApp>>, channel: string, version: string) {
+  const installer = `Acme-Setup-${version}.exe`
+  const init = await initUpload(app, {
+    channel,
+    version,
+    files: [{ filename: 'latest.yml' }, { filename: installer }],
+  })
+  for (const file of init.files) {
+    objects.set(file.key, file.filename === 'latest.yml' ? metadataFor(version, installer) : 'binary')
+  }
+  return finalizeUpload(app, init.uploadId)
+}
+
+/** Creates the app with the release log enabled for en-US + zh-CN. */
+async function enabledApp(locales = ['en-US', 'zh-CN'], fallbackLocale = 'en-US') {
+  const app = await createApp(appInput)
+  notesServer.updateNotesConfig(app.id, { enabled: true, locales, fallbackLocale })
+  return app
+}
+
+type ServerRoute = {
+  options: {
+    server?: {
+      handlers?: Record<string, (ctx: { request: Request; params: Record<string, string | undefined> }) => Promise<Response>>
+    }
+  }
+}
+
+/** Calls a server-route handler directly — no session cookie anywhere. */
+function routeHandler(route: unknown, method: string) {
+  const handler = (route as ServerRoute).options.server?.handlers?.[method]
+  if (!handler) throw new Error(`Route has no ${method} handler`)
+  return handler
+}
+
+beforeEach(() => {
+  db.delete(apps).run()
+  objects.clear()
+})
+
+describe('updateNotesConfig', () => {
+  it('saves the config without ever probing S3 storage', async () => {
+    const app = await createApp(appInput)
+    vi.mocked(verifyWritable).mockClear()
+
+    const saved = notesServer.updateNotesConfig(app.id, {
+      enabled: true,
+      locales: ['zh-CN', 'en-US', 'en-US'],
+      fallbackLocale: 'zh-CN',
+    })
+
+    expect(verifyWritable).not.toHaveBeenCalled()
+    expect(saved).toEqual({ enabled: true, locales: ['zh-CN', 'en-US'], fallbackLocale: 'zh-CN' })
+    const stored = getApp(app.id)
+    expect(stored.releaseLogEnabled).toBe(true)
+    expect(stored.releaseLogFallbackLocale).toBe('zh-CN')
+  })
+
+  it('validates locales and fallback when enabling', async () => {
+    const app = await createApp(appInput)
+    expect(() => notesServer.updateNotesConfig(app.id, { enabled: true, locales: [], fallbackLocale: 'en-US' })).toThrow(
+      /at least one locale/i,
+    )
+    expect(() =>
+      notesServer.updateNotesConfig(app.id, { enabled: true, locales: ['en-US'], fallbackLocale: 'fr-FR' }),
+    ).toThrow(/fallback locale/i)
+    expect(() =>
+      notesServer.updateNotesConfig(app.id, { enabled: true, locales: ['not a locale'], fallbackLocale: 'en-US' }),
+    ).toThrow(ShukkaError)
+    // Disabled apps may hold an empty list; the fallback stays at its default.
+    expect(notesServer.updateNotesConfig(app.id, { enabled: false, locales: [], fallbackLocale: 'en-US' })).toEqual({
+      enabled: false,
+      locales: [],
+      fallbackLocale: 'en-US',
+    })
+  })
+})
+
+describe('upsertNote', () => {
+  it('stores markdown, sanitized html and plain text at write time', async () => {
+    const app = await enabledApp()
+    const { versionId } = await publish(app, 'stable', '1.0.0')
+    const markdown = '# What’s new\n\nSome **bold** fix.\n\n<script>alert(1)</script>'
+
+    const note = notesServer.upsertNote(app.id, versionId, 'en-US', markdown)
+
+    expect(note.markdown).toBe(markdown)
+    expect(note.html).toContain('<strong>bold</strong>')
+    expect(note.html).not.toContain('<script>')
+    expect(note.text).toContain('What’s new')
+    expect(note.text).toContain('bold')
+    expect(note.text).not.toContain('**')
+    expect(note.text).not.toContain('<script>')
+  })
+
+  it('upserts on (version, locale) and re-renders', async () => {
+    const app = await enabledApp()
+    const { versionId } = await publish(app, 'stable', '1.0.0')
+
+    notesServer.upsertNote(app.id, versionId, 'en-US', 'first')
+    const updated = notesServer.upsertNote(app.id, versionId, 'en-US', '**second**')
+
+    expect(updated.markdown).toBe('**second**')
+    expect(updated.html).toContain('<strong>second</strong>')
+    expect(notesServer.listNotes(app.id, versionId)).toHaveLength(1)
+  })
+
+  it('rejects writes while the release log is disabled', async () => {
+    const app = await createApp(appInput)
+    const { versionId } = await publish(app, 'stable', '1.0.0')
+
+    expect(() => notesServer.upsertNote(app.id, versionId, 'en-US', 'hi')).toThrow(/not enabled/)
+    expect(() => notesServer.deleteNote(app.id, versionId, 'en-US')).toThrow(/not enabled/)
+  })
+
+  it('rejects invalid locale tags, empty markdown and foreign versions', async () => {
+    const app = await enabledApp()
+    const other = await createApp({ ...appInput, name: 'Other', slug: 'other' })
+    notesServer.updateNotesConfig(other.id, { enabled: true, locales: ['en-US'], fallbackLocale: 'en-US' })
+    const { versionId } = await publish(app, 'stable', '1.0.0')
+
+    expect(() => notesServer.upsertNote(app.id, versionId, 'not a locale', 'hi')).toThrow(/Invalid locale/)
+    expect(() => notesServer.upsertNote(app.id, versionId, 'en-US', '   ')).toThrow(/must not be empty/)
+    expect(() => notesServer.upsertNote(other.id, versionId, 'en-US', 'hi')).toThrow(/not found/i)
+  })
+})
+
+describe('publicNotes range semantics', () => {
+  it('resolves from inclusive / to exclusive over the channel timeline, newest first', async () => {
+    const app = await enabledApp()
+    for (const version of ['1.1.0', '1.2.0', '1.3.0', '1.4.0']) {
+      const { versionId } = await publish(app, 'stable', version)
+      notesServer.upsertNote(app.id, versionId, 'en-US', `notes for ${version}`)
+    }
+    createChannel(app.id, 'beta')
+    const beta = await publish(app, 'beta', '1.3.5')
+    notesServer.upsertNote(app.id, beta.versionId, 'en-US', 'beta notes')
+
+    const ranged = notesServer.publicNotes('acme', 'stable', { from: '1.2.0', to: '1.4.0', locale: null })
+    expect(ranged.notes.map((note) => note.version)).toEqual(['1.3.0', '1.2.0'])
+
+    const open = notesServer.publicNotes('acme', 'stable', { from: '1.2.0', to: null, locale: null })
+    expect(open.notes.map((note) => note.version)).toEqual(['1.4.0', '1.3.0', '1.2.0'])
+
+    // The beta channel's versions never mix in.
+    const betaOnly = notesServer.publicNotes('acme', 'beta', { from: null, to: null, locale: null })
+    expect(betaOnly.notes.map((note) => note.version)).toEqual(['1.3.5'])
+  })
+
+  it('is loud about unknown range bounds', async () => {
+    const app = await enabledApp()
+    const { versionId } = await publish(app, 'stable', '1.0.0')
+    notesServer.upsertNote(app.id, versionId, 'en-US', 'notes')
+
+    expect(() => notesServer.publicNotes('acme', 'stable', { from: '9.9.9', to: null, locale: null })).toThrow(
+      ShukkaError,
+    )
+    expect(() => notesServer.publicNotes('acme', 'stable', { from: '1.0.0', to: '9.9.9', locale: null })).toThrow(
+      /not found on this channel/,
+    )
+  })
+
+  it('returns the latest 10 versions that have notes when from is empty', async () => {
+    const app = await enabledApp()
+    for (let index = 1; index <= 12; index += 1) {
+      const { versionId } = await publish(app, 'stable', `1.0.${index}`)
+      // The newest version carries no note — it must be skipped.
+      if (index <= 11) notesServer.upsertNote(app.id, versionId, 'en-US', `notes ${index}`)
+    }
+
+    const result = notesServer.publicNotes('acme', 'stable', { from: null, to: null, locale: null })
+    expect(result.notes).toHaveLength(10)
+    expect(result.notes.map((note) => note.version)).toEqual([
+      '1.0.11',
+      '1.0.10',
+      '1.0.9',
+      '1.0.8',
+      '1.0.7',
+      '1.0.6',
+      '1.0.5',
+      '1.0.4',
+      '1.0.3',
+      '1.0.2',
+    ])
+  })
+})
+
+describe('publicNotes locale fallback chain', () => {
+  it('resolves requested exact → app fallback → first available → omit', async () => {
+    const app = await enabledApp(['en-US', 'zh-CN'], 'en-US')
+    const full = await publish(app, 'stable', '1.0.0')
+    notesServer.upsertNote(app.id, full.versionId, 'zh-CN', '中文说明')
+    notesServer.upsertNote(app.id, full.versionId, 'en-US', 'english notes')
+    const partial = await publish(app, 'stable', '1.1.0')
+    notesServer.upsertNote(app.id, partial.versionId, 'ja-JP', '日本語メモ')
+    await publish(app, 'stable', '1.2.0') // no notes at all — omitted
+
+    const exact = notesServer.publicNotes('acme', 'stable', { from: '1.0.0', to: null, locale: 'zh-CN' })
+    expect(exact.notes.map((note) => [note.version, note.locale, note.markdown])).toEqual([
+      ['1.1.0', 'ja-JP', '日本語メモ'], // requested miss → fallback miss → first available
+      ['1.0.0', 'zh-CN', '中文说明'], // requested exact match
+    ])
+
+    const fallback = notesServer.publicNotes('acme', 'stable', { from: '1.0.0', to: null, locale: 'fr-FR' })
+    expect(fallback.notes.map((note) => [note.version, note.locale])).toEqual([
+      ['1.1.0', 'ja-JP'],
+      ['1.0.0', 'en-US'], // requested miss → app fallback
+    ])
+
+    const absent = notesServer.publicNotes('acme', 'stable', { from: '1.0.0', to: null, locale: null })
+    expect(absent.notes.map((note) => [note.version, note.locale])).toEqual([
+      ['1.1.0', 'ja-JP'],
+      ['1.0.0', 'en-US'], // no requested locale → app fallback
+    ])
+  })
+})
+
+describe('publicNotes gating and errors', () => {
+  it('returns no data for apps without the release log enabled', async () => {
+    const app = await enabledApp()
+    const { versionId } = await publish(app, 'stable', '1.0.0')
+    notesServer.upsertNote(app.id, versionId, 'en-US', 'notes')
+
+    notesServer.updateNotesConfig(app.id, { enabled: false, locales: [], fallbackLocale: 'en-US' })
+    expect(notesServer.publicNotes('acme', 'stable', { from: null, to: null, locale: null })).toEqual({ notes: [] })
+
+    const plain = await createApp({ ...appInput, name: 'Plain', slug: 'plain' })
+    await publish(plain, 'stable', '1.0.0')
+    expect(notesServer.publicNotes('plain', 'stable', { from: null, to: null, locale: null })).toEqual({ notes: [] })
+  })
+
+  it('rejects unknown apps and channels as not_found', async () => {
+    await enabledApp()
+    expect(() => notesServer.publicNotes('nope', 'stable', { from: null, to: null, locale: null })).toThrow(ShukkaError)
+    expect(() => notesServer.publicNotes('acme', 'nope', { from: null, to: null, locale: null })).toThrow(/not found/i)
+  })
+})
+
+describe('public notes route', () => {
+  it('serves notes without any session and keeps the feed error envelope', async () => {
+    const app = await enabledApp()
+    const { versionId } = await publish(app, 'stable', '1.0.0')
+    notesServer.upsertNote(app.id, versionId, 'en-US', 'hello')
+    const GET = routeHandler(notesRoute.Route, 'GET')
+
+    const ok = await GET({
+      request: new Request('https://shukka.test/api/v1/apps/acme/channels/stable/notes'),
+      params: { appSlug: 'acme', channel: 'stable' },
+    })
+    expect(ok.status).toBe(200)
+    const body = (await ok.json()) as { notes: { version: string; locale: string }[] }
+    expect(body.notes).toHaveLength(1)
+    expect(body.notes[0]).toMatchObject({ version: '1.0.0', locale: 'en-US' })
+
+    const missing = await GET({
+      request: new Request('https://shukka.test/api/v1/apps/nope/channels/stable/notes'),
+      params: { appSlug: 'nope', channel: 'stable' },
+    })
+    expect(missing.status).toBe(404)
+    expect(await missing.json()).toMatchObject({ error: 'not_found' })
+  })
+})
+
+describe('release notes lifecycle', () => {
+  it('cascades notes when the version is deleted', async () => {
+    const app = await enabledApp()
+    const { versionId } = await publish(app, 'stable', '1.0.0')
+    notesServer.upsertNote(app.id, versionId, 'en-US', 'english')
+    notesServer.upsertNote(app.id, versionId, 'zh-CN', '中文')
+
+    await deleteVersion(getApp(app.id), versionId)
+    expect(db.select().from(releaseNotes).where(eq(releaseNotes.versionId, versionId)).all()).toHaveLength(0)
+  })
+
+  it('deletes a single locale note and complains about missing ones', async () => {
+    const app = await enabledApp()
+    const { versionId } = await publish(app, 'stable', '1.0.0')
+    notesServer.upsertNote(app.id, versionId, 'en-US', 'english')
+
+    notesServer.deleteNote(app.id, versionId, 'en-US')
+    expect(notesServer.listNotes(app.id, versionId)).toHaveLength(0)
+    expect(() => notesServer.deleteNote(app.id, versionId, 'en-US')).toThrow(/No en-US note/)
+  })
+})

@@ -3,6 +3,7 @@ import { apps } from '~/db/schema.ts'
 import { getApp, listApiKeys } from './apps.ts'
 import { listChannels, listVersions } from './channels.ts'
 import { feedBaseUrl } from './feed.ts'
+import { notesConfig } from './release-notes.ts'
 import { listArtifacts } from './releases.ts'
 import type { App } from '~/db/schema.ts'
 
@@ -18,6 +19,9 @@ export function publicApp(app: App) {
     s3Prefix: app.s3Prefix,
     s3AccessKeyId: app.s3AccessKeyId,
     s3ForcePathStyle: app.s3ForcePathStyle,
+    releaseLogEnabled: app.releaseLogEnabled,
+    releaseLogLocales: notesConfig(app).locales,
+    releaseLogFallbackLocale: app.releaseLogFallbackLocale,
     createdAt: app.createdAt,
   }
 }
