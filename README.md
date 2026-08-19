@@ -75,7 +75,6 @@ The **Integration** tab prints these with your real URLs filled in:
 publish:
   provider: generic
   url: https://updates.example.com/api/update/my-app/stable
-  channel: stable
 ```
 
 Uploads are atomic: until `finalize` succeeds — and, by default, until the version is

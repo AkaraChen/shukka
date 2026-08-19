@@ -2,10 +2,28 @@ name: Action test
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - action.yml
+      - scripts/shukka-upload.mjs
+      - src/server/feed.ts
+      - src/server/releases.ts
+      - src/lib/update-metadata.ts
+      - src/routes/api/update/**
+      - tests/e2e/**
+      - .github/scripts/**
+      - .github/workflows/action-test.yml
   pull_request:
     paths:
       - action.yml
       - scripts/shukka-upload.mjs
+      - src/server/feed.ts
+      - src/server/releases.ts
+      - src/lib/update-metadata.ts
+      - src/routes/api/update/**
+      - tests/e2e/**
+      - .github/scripts/**
       - .github/workflows/action-test.yml
 
 permissions:
@@ -72,3 +90,20 @@ jobs:
         run: |
           node .github/scripts/verify-feed.mjs \
             "$SHUKKA_URL/api/update/demo-app/stable" "${{ steps.publish.outputs.version }}"
+
+      - name: Install electron-updater e2e
+        run: npm ci --prefix tests/e2e
+
+      - name: electron-updater check and download
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libnss3 libatk-bridge2.0-0 libgtk-3-0 libgbm1 libasound2t64
+          xvfb-run -a node tests/e2e/run.mjs
+        env:
+          SHUKKA_URL: ${{ env.SHUKKA_URL }}
+          SHUKKA_API_KEY: ${{ steps.provision.outputs.api-key }}
+          SHUKKA_APP: demo-app
+          SHUKKA_CHANNEL: stable
+          E2E_SKIP_PUBLISH: '1'
+          E2E_VERSION: ${{ steps.publish.outputs.version }}
+          ELECTRON_DISABLE_SANDBOX: '1'

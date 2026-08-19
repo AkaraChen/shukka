@@ -1,0 +1,9 @@
+{
+  "name": "shukka-updater-e2e",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "electron": "37.3.1",
+    "electron-updater": "6.8.9"
+  }
+}

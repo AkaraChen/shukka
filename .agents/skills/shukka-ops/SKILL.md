@@ -92,7 +92,6 @@ Each channel has a feed base URL: `{SHUKKA_URL}/api/update/{app}/{channel}`.
 publish:
   provider: generic
   url: https://updates.example.com/api/update/my-app/stable
-  channel: stable
 ```
 
 No credentials belong in client configuration — the feed is public by design.

@@ -29,7 +29,7 @@ Out of scope until explicitly specified: anything not yet accepted in a PRD.
 
 ### Update feed（无鉴权）
 
-- `GET /api/update/{appSlug}/{channel}/{metadataFile}.yml` 返回该 channel 当前版本中同名 yml 的原文；无当前版本或文件不存在时返回 404。
+- `GET /api/update/{appSlug}/{channel}/{metadataFile}.yml` 返回该 channel 当前版本中同名 yml 的原文；无当前版本或文件不存在时返回 404。Shukka channel 在 URL 路径里选定；electron-updater 默认再请求 `latest.yml` / `latest-mac.yml` / `latest-linux.yml`。把 Shukka channel 名写进 electron-builder `publish.channel` 会改成请求 `stable.yml` 等，除非产物里真有这些文件。
 - `GET /api/update/{appSlug}/{channel}/{artifactName}` 对 channel 内**已发布**版本（`releasedAt` 非空）的制品按文件名解析，302 到短时效 S3 URL；draft 的文件名与不存在相同，返回 404。
 - Feed 与 electron-updater generic provider 兼容是硬契约：Shukka 永不改写 yml 内容。
 - yml 命中与制品 302 分别计入所属版本的下载计数；每次命中在计数器递增的同一事务内 upsert 其 UTC 小时 hit bucket。
@@ -77,6 +77,7 @@ Out of scope until explicitly specified: anything not yet accepted in a PRD.
 
 - 仓库根 `action.yml` 为 composite action，inputs：`server-url`、`api-key`、`app`、`channel`、`version`、`directory`、`create-channel`、`release`（默认 false，对应 finalize 的 draft；`true` 则立即上线）；将目录内 electron-builder 产物完整发布为一个版本，outputs 为 `version` 与 `channel`。`version` 留空时从目录内 yml 读取。
 - `action.yml` 与仓库 workflow 必须通过 actionlint。
+- Feed e2e：在真实 MinIO + 已发布版本上，用 Electron library 拉起 `electron-updater`（generic provider）做 check + download + sha512；不测 `quitAndInstall`。见 `docs/adr/electron-updater-e2e.md`。
 
 ## System-wide invariants
 
@@ -120,5 +121,5 @@ Out of scope until explicitly specified: anything not yet accepted in a PRD.
   in `src/lib/`. Nested `/api/admin/apps/:id` routes are gone.
 - GitHub Action at repository root `action.yml` + `scripts/shukka-upload.mjs`; agent skill at
   `.agents/skills/shukka-ops/`.
-- Verified end to end against MinIO: publish through the action under `act`, feed served to
-  `electron-updater`'s generic layout, artifact redirect to presigned storage.
+- Verified end to end against MinIO: publish through the action, HTTP feed + 302, and a
+  host-platform `electron-updater` check/download (`tests/e2e/`, `docs/adr/electron-updater-e2e.md`).

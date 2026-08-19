@@ -38,8 +38,7 @@ export function buildIntegrationSnippets({
       code: `# electron-builder.yml
 publish:
   provider: generic
-  url: ${feedUrl}
-  channel: ${channelName}`,
+  url: ${feedUrl}`,
     },
     mainProcess: {
       lang: 'ts',
@@ -48,7 +47,6 @@ publish:
 autoUpdater.setFeedURL({
   provider: 'generic',
   url: '${feedUrl}',
-  channel: '${channelName}',
 })
 autoUpdater.checkForUpdatesAndNotify()`,
     },

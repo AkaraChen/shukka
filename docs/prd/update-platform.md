@@ -61,8 +61,7 @@ Shukka 是一个自托管的发版管理器：面板管理 app / channel / 版�
 - [x] 创建 app 时 S3 配置校验失败给出明确错误，不落库半成品。
 - [x] API key 明文只在创建响应中出现一次；数据库中只有 hash；吊销后立即 401。
 - [x] 用 A app 的 key 向 B app 上传返回 403。
-- [ ] 完整上传一个 electron-builder mac+win 产物目录后，electron-updater（generic provider）能在两平台检查到新版本并成功下载安装。
-      （feed 布局与 302 下载已用真实 MinIO 验证；真机双平台安装待接入实际应用时确认。）
+- [x] 完整上传一份含 Windows / macOS / Linux 元数据的 electron-builder 形产物后，宿主平台上的 electron-updater（generic provider）能 check 到新版本并完成制品下载与 sha512 校验（跟随 302）。不覆盖 `quitAndInstall` / 真机替换。
 - [x] finalize 之前 channel 的 feed 始终返回旧版本；仅 `release: true` 的 finalize 或事后 promote 之后返回新版本（见 `docs/prd/draft-releases.md`）。
 - [x] 同一 channel 重复上传同一 version 被拒绝（除非先在面板删除该版本）。
 - [x] 面板 app 列表、channel 列表、版本列表、下载计数、feed URL、配置片段均可见；UI 为 shadcn sidebar 应用壳。
