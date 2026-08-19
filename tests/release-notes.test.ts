@@ -59,7 +59,7 @@ async function publish(app: Awaited<ReturnType<typeof createApp>>, channel: stri
   for (const file of init.files) {
     objects.set(file.key, file.filename === 'latest.yml' ? metadataFor(version, installer) : 'binary')
   }
-  return finalizeUpload(app, init.uploadId)
+  return finalizeUpload(app, init.uploadId, { release: true })
 }
 
 /** Creates the app with the release log enabled for en-US + zh-CN. */
@@ -267,6 +267,27 @@ describe('publicNotes locale fallback chain', () => {
 })
 
 describe('publicNotes gating and errors', () => {
+  it('omits draft versions even when they have notes', async () => {
+    const app = await enabledApp()
+    const live = await publish(app, 'stable', '1.0.0')
+    notesServer.upsertNote(app.id, live.versionId, 'en-US', 'live notes')
+
+    const init = await initUpload(app, {
+      channel: 'stable',
+      version: '2.0.0',
+      files: [{ filename: 'latest.yml' }, { filename: 'Acme-Setup-2.0.0.exe' }],
+    })
+    for (const file of init.files) {
+      objects.set(file.key, file.filename === 'latest.yml' ? metadataFor('2.0.0', 'Acme-Setup-2.0.0.exe') : 'binary')
+    }
+    const draft = await finalizeUpload(app, init.uploadId)
+    notesServer.upsertNote(app.id, draft.versionId, 'en-US', 'secret draft')
+
+    expect(
+      notesServer.publicNotes('acme', 'stable', { from: null, to: null, locale: null }).notes.map((note) => note.version),
+    ).toEqual(['1.0.0'])
+  })
+
   it('returns no data for apps without the release log enabled', async () => {
     const app = await enabledApp()
     const { versionId } = await publish(app, 'stable', '1.0.0')

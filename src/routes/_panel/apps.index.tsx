@@ -47,8 +47,8 @@ function AppsPage() {
           {apps.map((app) => (
             <li key={app.id}>
               <Link
-                to="/apps/$appId"
-                params={{ appId: String(app.id) }}
+                to="/apps/$appSlug"
+                params={{ appSlug: app.slug }}
                 className="flex h-full flex-col rounded-2xl bg-card px-5 py-5 transition-colors hover:bg-accent/60"
               >
                 <p className="truncate">{app.name}</p>

@@ -14,7 +14,7 @@ import {
   type VersionNote,
 } from '~/lib/release-log.ts'
 import { getApp, getAppBySlug } from './apps.ts'
-import { getChannel, listVersions } from './channels.ts'
+import { getChannel, listPublishedVersions } from './channels.ts'
 import type { App, Version } from '~/db/schema.ts'
 
 /** Parses the stored config columns into the shared shape. */
@@ -133,7 +133,7 @@ export function publicNotes(appSlug: string, channelName: string, query: NotesQu
   const channel = getChannel(app.id, channelName)
   if (!app.releaseLogEnabled) return { notes: [] }
 
-  const channelVersions = listVersions(channel.id)
+  const channelVersions = listPublishedVersions(channel.id)
   let selected: Version[]
   if (query.from !== null) {
     selected = resolveNotesRange(channelVersions, query.from, query.to)
@@ -167,7 +167,7 @@ export function publicNotes(appSlug: string, channelName: string, query: NotesQu
   const notes: VersionNote[] = []
   for (const version of selected) {
     const resolved = resolveNoteLocale(byVersion.get(version.id) ?? [], query.locale, config.fallbackLocale)
-    if (resolved) {
+    if (resolved && version.releasedAt != null) {
       notes.push({ version: version.version, releasedAt: version.releasedAt, ...resolved })
     }
   }

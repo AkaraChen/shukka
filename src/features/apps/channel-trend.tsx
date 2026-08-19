@@ -11,13 +11,13 @@ import { channelTrendQueryOptions } from './requests/trends.ts'
 const RANGE_LABEL_KEYS = { 7: 'range7', 30: 'range30', 90: 'range90' } as const
 
 /** Channel traffic over 7/30/90 days; the range lives in the `?range=` URL param. */
-export function ChannelTrend({ appId, channelId }: { appId: number; channelId: number }) {
+export function ChannelTrend({ slug, channel }: { slug: string; channel: string }) {
   const t = useT()
   const format = useFormatters()
   const [rawRange, setRange] = useQueryState('range', parseAsInteger.withDefault(DEFAULT_TREND_RANGE))
   // A hand-edited URL can carry any integer; the server rejects it loudly, so fall back here.
   const range: TrendRange = isTrendRange(rawRange) ? rawRange : DEFAULT_TREND_RANGE
-  const { data, isError } = useQuery(channelTrendQueryOptions({ appId, channelId, range }))
+  const { data, isError } = useQuery(channelTrendQueryOptions({ slug, channel, range }))
 
   const formatTick =
     data?.granularity === 'hour'

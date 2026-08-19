@@ -60,7 +60,8 @@ autoUpdater.checkForUpdatesAndNotify()`,
     api-key: \${{ secrets.SHUKKA_API_KEY }}
     app: ${app.slug}
     channel: ${channelName}
-    directory: dist`,
+    directory: dist
+    # release: true   # omit to leave the version as a draft`,
     },
     httpApi: {
       lang: 'bash',
@@ -73,7 +74,7 @@ curl -X POST ${serverUrl}/api/v1/upload/init \\
 # 2. Upload each file's bytes straight to S3
 curl -X PUT --data-binary @latest.yml "<uploadUrl from init>"
 
-# 3. Finalize — verifies objects, parses yml, flips the channel
+# 3. Finalize — creates a draft. Add "release":true to go live immediately.
 curl -X POST ${serverUrl}/api/v1/upload/finalize \\
   -H "Authorization: Bearer $SHUKKA_API_KEY" \\
   -H "content-type: application/json" \\

@@ -10,7 +10,7 @@ Electron 安装包单文件常达数百 MB，一次发版多平台多文件。�
 
 1. `POST /api/v1/upload/init`（Bearer API key）：携带 channel、version、文件清单；Shukka 校验权限与版本唯一性，创建 pending upload 记录，为每个文件签发 S3 presigned PUT URL。
 2. 客户端逐文件 PUT 直传 S3，key 布局 `{prefix}/{channel}/{version}/{filename}`。
-3. `POST /api/v1/upload/finalize`：Shukka HeadObject 逐一校验对象存在与大小，读取并解析 yml，创建版本与文件记录，原子切换 channel 当前版本。
+3. `POST /api/v1/upload/finalize`：Shukka HeadObject 逐一校验对象存在与大小，读取并解析 yml，创建版本与文件记录。默认 draft，不切 current；仅 `release: true` 时原子切换 channel 当前版本（见 `docs/adr/draft-released-at.md`）。
 
 未 finalize 的 pending upload 过期作废；期间 feed 不受影响。
 

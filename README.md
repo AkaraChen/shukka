@@ -78,7 +78,8 @@ publish:
   channel: stable
 ```
 
-Uploads are atomic: until `finalize` succeeds the channel keeps serving the previous
+Uploads are atomic: until `finalize` succeeds — and, by default, until the version is
+promoted or finalized with `release: true` — the channel keeps serving the previous
 release, so a half-finished upload never reaches a user.
 
 ## Develop

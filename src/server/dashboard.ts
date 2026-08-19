@@ -1,6 +1,6 @@
 import { db } from '~/db/index.ts'
 import { apps } from '~/db/schema.ts'
-import { getApp, listApiKeys } from './apps.ts'
+import { getApp, getAppBySlug, listApiKeys } from './apps.ts'
 import { listChannels, listVersions } from './channels.ts'
 import { feedBaseUrl } from './feed.ts'
 import { notesConfig } from './release-notes.ts'
@@ -51,18 +51,26 @@ export function appSummaries() {
         ...publicApp(app),
         channels,
         totalDownloads: allVersions.reduce((sum, version) => sum + version.artifactHits, 0),
-        lastReleasedAt: allVersions.length > 0 ? Math.max(...allVersions.map((v) => v.releasedAt)) : null,
+        lastReleasedAt: (() => {
+          const published = allVersions.map((version) => version.releasedAt).filter((at): at is number => at != null)
+          return published.length > 0 ? Math.max(...published) : null
+        })(),
       }
     })
 }
 
 export type AppSummary = ReturnType<typeof appSummaries>[number]
 
+export function appDetailBySlug(slug: string, origin: string) {
+  return appDetail(getAppBySlug(slug).id, origin)
+}
+
 export function appDetail(appId: number, origin: string) {
   const app = getApp(appId)
   const channels = listChannels(app.id).map((channel) => {
     const versions = listVersions(channel.id).map((version) => ({
       ...version,
+      isDraft: version.releasedAt == null,
       isCurrent: version.id === channel.currentVersionId,
       artifacts: listArtifacts(version.id),
     }))

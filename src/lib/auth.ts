@@ -120,3 +120,32 @@ export function authenticateApiKey(request: Request, appSlug?: string): App {
   db.update(apiKeys).set({ lastUsedAt: nowSeconds() }).where(eq(apiKeys.id, key.id)).run()
   return app
 }
+
+export type AppActor = { app: App; via: 'session' | 'key' }
+
+/**
+ * App-scoped actor: Bearer key if `Authorization` is present, otherwise the
+ * admin session. The key must be bound to `slug`.
+ */
+function appBySlug(slug: string): App {
+  const app = db.select().from(apps).where(eq(apps.slug, slug)).get()
+  if (!app) throw new ShukkaError('not_found', `App "${slug}" not found`)
+  return app
+}
+
+export function requireAppActor(request: Request, slug: string): AppActor {
+  if (request.headers.get('authorization')) {
+    return { app: authenticateApiKey(request, slug), via: 'key' }
+  }
+  requireAdmin(request)
+  return { app: appBySlug(slug), via: 'session' }
+}
+
+/** Session-only app ops (delete app, API key CRUD). Keys are rejected even if valid. */
+export function requireSessionApp(request: Request, slug: string): App {
+  if (request.headers.get('authorization')) {
+    throw new ShukkaError('forbidden', 'This operation requires an admin session')
+  }
+  requireAdmin(request)
+  return appBySlug(slug)
+}

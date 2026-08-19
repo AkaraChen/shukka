@@ -19,8 +19,8 @@ export type AppFormValues = {
 export type StorageTestValues = Omit<AppFormValues, 'name' | 'slug'>
 
 export type SetCurrentVersionVariables = {
-  channelId: number
-  versionId: number | null
+  channel: string
+  version: string | null
 }
 
 export type CreatedApiKey = { key: { id: number; hint: string }; plaintext: string }
@@ -41,6 +41,10 @@ export async function apiGet<T>(path: string): Promise<T> {
   return api.get<T>(path)
 }
 
+function appPath(slug: string, suffix = '') {
+  return `/api/v1/apps/${encodeURIComponent(slug)}${suffix}`
+}
+
 export function appsQueryOptions() {
   return queryOptions({
     queryKey: appKeys.list(),
@@ -49,10 +53,10 @@ export function appsQueryOptions() {
   })
 }
 
-export function appDetailQueryOptions({ appId }: { appId: number }) {
+export function appDetailQueryOptions({ slug }: { slug: string }) {
   return queryOptions({
-    queryKey: appKeys.detail(appId),
-    queryFn: () => apiGet<AppDetail>(`/api/admin/apps/${appId}`),
+    queryKey: appKeys.detail(slug),
+    queryFn: () => apiGet<AppDetail>(appPath(slug)),
     staleTime: 30_000,
   })
 }
@@ -71,11 +75,11 @@ export async function primeAppsQuery(queryClient: QueryClient) {
   }
 }
 
-export async function primeAppDetailQuery(queryClient: QueryClient, appId: number) {
+export async function primeAppDetailQuery(queryClient: QueryClient, slug: string) {
   try {
-    return await queryClient.ensureQueryData(appDetailQueryOptions({ appId }))
+    return await queryClient.ensureQueryData(appDetailQueryOptions({ slug }))
   } catch {
-    queryClient.removeQueries({ queryKey: appKeys.detail(appId) })
+    queryClient.removeQueries({ queryKey: appKeys.detail(slug) })
     return undefined
   }
 }
@@ -99,25 +103,26 @@ export function createAppMutationOptions({
 }
 
 export function updateAppMutationOptions({
-  appId,
+  slug,
   queryClient,
   onSuccess,
-}: MutationParams<{ app: PublicApp }, AppFormValues> & { appId: number }) {
+}: MutationParams<{ app: PublicApp }, AppFormValues> & { slug: string }) {
   return mutationOptions({
-    mutationFn: (values: AppFormValues) => api.patch<{ app: PublicApp }>(`/api/admin/apps/${appId}`, values),
+    mutationFn: (values: AppFormValues) => api.patch<{ app: PublicApp }>(appPath(slug), values),
     onSuccess: async (data, variables) => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: appKeys.list() }),
-        queryClient.invalidateQueries({ queryKey: appKeys.detail(appId) }),
+        queryClient.invalidateQueries({ queryKey: appKeys.detail(slug) }),
+        queryClient.invalidateQueries({ queryKey: appKeys.detail(data.app.slug) }),
       ])
       onSuccess?.(data, variables)
     },
   })
 }
 
-export function deleteAppMutationOptions({ queryClient, onSuccess }: MutationParams<unknown, number>) {
+export function deleteAppMutationOptions({ queryClient, onSuccess }: MutationParams<unknown, string>) {
   return mutationOptions({
-    mutationFn: (appId: number) => api.delete(`/api/admin/apps/${appId}`),
+    mutationFn: (slug: string) => api.delete(appPath(slug)),
     onSuccess: async (data, variables) => {
       await queryClient.invalidateQueries({ queryKey: appKeys.all() })
       onSuccess?.(data, variables)
@@ -133,111 +138,112 @@ export function testStorageMutationOptions() {
 
 /** Every app-scoped change refreshes that app's detail view, nothing else. */
 function appScopedMutationOptions<TData, TVariables>({
-  appId,
+  slug,
   queryClient,
   mutationFn,
   onSuccess,
 }: MutationParams<TData, TVariables> & {
-  appId: number
+  slug: string
   mutationFn: (variables: TVariables) => Promise<TData>
 }) {
   return mutationOptions({
     mutationFn,
     onSuccess: async (data, variables) => {
-      await queryClient.invalidateQueries({ queryKey: appKeys.detail(appId) })
+      await queryClient.invalidateQueries({ queryKey: appKeys.detail(slug) })
       onSuccess?.(data, variables)
     },
   })
 }
 
 export function createChannelMutationOptions({
-  appId,
+  slug,
   queryClient,
   onSuccess,
-}: MutationParams<unknown, string> & { appId: number }) {
+}: MutationParams<unknown, string> & { slug: string }) {
   return appScopedMutationOptions({
-    appId,
+    slug,
     queryClient,
     onSuccess,
-    mutationFn: (name: string) => api.post(`/api/admin/apps/${appId}/channels`, { name }),
+    mutationFn: (name: string) => api.post(appPath(slug, '/channels'), { name }),
   })
 }
 
 export function deleteChannelMutationOptions({
-  appId,
+  slug,
   queryClient,
   onSuccess,
-}: MutationParams<unknown, number> & { appId: number }) {
+}: MutationParams<unknown, string> & { slug: string }) {
   return appScopedMutationOptions({
-    appId,
+    slug,
     queryClient,
     onSuccess,
-    mutationFn: (channelId: number) => api.delete(`/api/admin/apps/${appId}/channels/${channelId}`),
+    mutationFn: (channel: string) => api.delete(appPath(slug, `/channels/${encodeURIComponent(channel)}`)),
   })
 }
 
 export function setCurrentVersionMutationOptions({
-  appId,
+  slug,
   queryClient,
   onSuccess,
-}: MutationParams<unknown, SetCurrentVersionVariables> & { appId: number }) {
+}: MutationParams<unknown, SetCurrentVersionVariables> & { slug: string }) {
   return appScopedMutationOptions({
-    appId,
+    slug,
     queryClient,
     onSuccess,
-    mutationFn: ({ channelId, versionId }: SetCurrentVersionVariables) =>
-      api.patch(`/api/admin/apps/${appId}/channels/${channelId}`, { currentVersionId: versionId }),
+    mutationFn: ({ channel, version }: SetCurrentVersionVariables) =>
+      api.patch(appPath(slug, `/channels/${encodeURIComponent(channel)}`), { currentVersion: version }),
   })
 }
 
 export function deleteVersionMutationOptions({
-  appId,
+  slug,
   queryClient,
   onSuccess,
-}: MutationParams<unknown, number> & { appId: number }) {
+}: MutationParams<unknown, { channel: string; version: string }> & { slug: string }) {
   return appScopedMutationOptions({
-    appId,
+    slug,
     queryClient,
     onSuccess,
-    mutationFn: (versionId: number) => api.delete(`/api/admin/apps/${appId}/versions/${versionId}`),
+    mutationFn: ({ channel, version }) =>
+      api.delete(appPath(slug, `/channels/${encodeURIComponent(channel)}/versions/${encodeURIComponent(version)}`)),
   })
 }
 
 export function createApiKeyMutationOptions({
-  appId,
+  slug,
   queryClient,
   onSuccess,
-}: MutationParams<CreatedApiKey, string> & { appId: number }) {
+}: MutationParams<CreatedApiKey, string> & { slug: string }) {
   return appScopedMutationOptions({
-    appId,
+    slug,
     queryClient,
     onSuccess,
-    mutationFn: (name: string) => api.post<CreatedApiKey>(`/api/admin/apps/${appId}/keys`, { name }),
+    mutationFn: (name: string) => api.post<CreatedApiKey>(appPath(slug, '/keys'), { name }),
   })
 }
 
 export function revokeApiKeyMutationOptions({
-  appId,
+  slug,
   queryClient,
   onSuccess,
-}: MutationParams<unknown, number> & { appId: number }) {
+}: MutationParams<unknown, number> & { slug: string }) {
   return appScopedMutationOptions({
-    appId,
+    slug,
     queryClient,
     onSuccess,
-    mutationFn: (keyId: number) => api.delete(`/api/admin/apps/${appId}/keys/${keyId}`),
+    mutationFn: (keyId: number) => api.delete(appPath(slug, `/keys/${keyId}`)),
   })
 }
 
 export function deleteApiKeyMutationOptions({
-  appId,
+  slug,
   queryClient,
   onSuccess,
-}: MutationParams<unknown, number> & { appId: number }) {
+}: MutationParams<unknown, number> & { slug: string }) {
   return appScopedMutationOptions({
-    appId,
+    slug,
     queryClient,
     onSuccess,
-    mutationFn: (keyId: number) => api.delete(`/api/admin/apps/${appId}/keys/${keyId}?mode=delete`),
+    mutationFn: (keyId: number) => api.delete(appPath(slug, `/keys/${keyId}?mode=delete`)),
   })
 }

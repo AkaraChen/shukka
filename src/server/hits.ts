@@ -111,6 +111,7 @@ export function versionTrend(appId: number, versionId: number, now: number = now
     .where(and(eq(versions.id, versionId), eq(versions.appId, appId)))
     .get()
   if (!version) throw new ShukkaError('not_found', 'Version not found')
+  if (version.releasedAt == null) return { points: [] }
 
   const releaseDay = Math.floor(version.releasedAt / DAY) * DAY
   const windowEnd = releaseDay + VERSION_TREND_DAYS * DAY

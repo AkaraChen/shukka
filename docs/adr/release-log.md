@@ -21,8 +21,8 @@ Accepted.
 - **模块划分**：`src/server/release-notes.ts` 为领域模块（DB I/O + 公开 API 逻辑）；`src/lib/release-log.ts` 放共享类型/常量/纯函数（回退链解析、版本段解析），不 import db/react，客户端可安全 value-import；`src/lib/markdown.ts` 为渲染器封装。
 - **Endpoint**：
   - 公开：`GET /api/v1/apps/{appSlug}/channels/{channel}/notes?from&to&locale`（splat 族路由，无鉴权，错误信封与 feed 一致）。
-  - 管理：`PUT /api/admin/apps/{appId}/notes-config` 独立配置 endpoint——刻意与 app PATCH 分开，使开关/改配置永不触发 S3 存储探测；note 编辑走 `PUT /api/admin/apps/{appId}/versions/{versionId}/notes/{locale}`（upsert）与同路径 `DELETE`。
-- **面板**：创建应用向导第 3 步（启用开关 + locale 列表 + 回退 locale 选择）；app 设置页「Release log」分区（左侧导航驱动，nuqs `section` 参数）；Channels 标签页历史行的 notes 编辑按钮（app 启用时出现）跳转到**独立编辑页面** `/apps/{appId}/notes/{versionId}`（按 locale 切换，取已配置 locale 与已有 note locale 的并集）；notes 编辑对 content 角色开放；配置分区对 admin/developer 在 Settings 标签内可见，content 角色的 Settings 标签仅含 Release log 分区。
+  - 管理：notes 配置与编辑走 `/api/v1/apps/{slug}/...`（见 `docs/adr/app-api-v1.md`），刻意与改存储的 PATCH 分开，永不触发 S3 探测；note 的 PUT 为 upsert。
+- **面板**：创建应用向导第 3 步（启用开关 + locale 列表 + 回退 locale 选择）；app 设置页「Release log」分区（左侧导航驱动，nuqs `section` 参数）；Channels 标签页历史行的 notes 编辑按钮（app 启用时出现）跳转到**独立编辑页面** `/apps/{appSlug}/notes/{version}`（按 locale 切换，取已配置 locale 与已有 note locale 的并集）；notes 编辑对 content 角色开放；配置分区对 admin/developer 在 Settings 标签内可见，content 角色的 Settings 标签仅含 Release log 分区。
 - **编辑器：Milkdown Crepe 所见即所得**。独立页面内嵌 Crepe 编辑器（懒加载，ProseMirror/CodeMirror 不进主 bundle）；Word 粘贴经 ProseMirror 剪贴板 HTML 解析、Markdown 源文粘贴经 `@milkdown/plugin-clipboard` 自动解析，均为 Crepe 内置能力。不引任何 Crepe 主题文件，只在全局样式里把 `--crepe-color-*` / `--crepe-font-*` 变量映射到面板主题 token（token 自身在 `.dark` 下翻转，编辑器自动跟随）；关闭 Latex / ImageBlock 特性（notes 无公式与图片上传场景）。落库的仍是编辑器序列化出的 Markdown，写时渲染管线不变。
 - **Locale 选择器**：自定义 combobox（约 140 行，基于 radix Popover），BCP-47 自动补全，用 `Intl.DisplayNames` 显示本地化语言名。
 - **i18n**：新增 `releaseLog` 命名空间与 `wizard.stepReleaseLog` 键，en/zh 同步。

@@ -23,7 +23,7 @@ import type { AppDetail } from '~/server/dashboard.ts'
 
 type ApiKey = AppDetail['keys'][number]
 
-export function ApiKeysPanel({ appId, keys }: { appId: number; keys: AppDetail['keys'] }) {
+export function ApiKeysPanel({ slug, keys }: { slug: string; keys: AppDetail['keys'] }) {
   const [plaintext, setPlaintext] = useState<string | null>(null)
   const t = useT()
 
@@ -34,12 +34,12 @@ export function ApiKeysPanel({ appId, keys }: { appId: number; keys: AppDetail['
           <h3 className="text-base">{t.apiKeys.title}</h3>
           <p className="mt-1 text-sm text-muted-foreground">{t.apiKeys.description}</p>
         </div>
-        <NewKeyDialog appId={appId} onCreated={setPlaintext} />
+        <NewKeyDialog slug={slug} onCreated={setPlaintext} />
       </div>
 
       <div className="mt-5 space-y-4">
         {plaintext ? <PlaintextAlert plaintext={plaintext} /> : null}
-        {keys.length > 0 ? <KeysTable appId={appId} keys={keys} /> : <EmptyState />}
+        {keys.length > 0 ? <KeysTable slug={slug} keys={keys} /> : <EmptyState />}
       </div>
     </section>
   )
@@ -60,7 +60,7 @@ function PlaintextAlert({ plaintext }: { plaintext: string }) {
   )
 }
 
-function KeysTable({ appId, keys }: { appId: number; keys: ApiKey[] }) {
+function KeysTable({ slug, keys }: { slug: string; keys: ApiKey[] }) {
   const t = useT()
   return (
     <div className="overflow-hidden rounded-2xl bg-card px-4">
@@ -76,7 +76,7 @@ function KeysTable({ appId, keys }: { appId: number; keys: ApiKey[] }) {
         </TableHeader>
         <TableBody>
           {keys.map((key) => (
-            <KeyRow key={key.id} appId={appId} apiKey={key} />
+            <KeyRow key={key.id} slug={slug} apiKey={key} />
           ))}
         </TableBody>
       </Table>
@@ -89,10 +89,10 @@ function KeysTable({ appId, keys }: { appId: number; keys: ApiKey[] }) {
  * machine hint in mono one step down, dates at the tertiary step. Revoked rows
  * are capped at the secondary step so they read as inactive.
  */
-function KeyRow({ appId, apiKey }: { appId: number; apiKey: ApiKey }) {
+function KeyRow({ slug, apiKey }: { slug: string; apiKey: ApiKey }) {
   const queryClient = useQueryClient()
-  const revoke = useMutation(revokeApiKeyMutationOptions({ appId, queryClient }))
-  const deleteKey = useMutation(deleteApiKeyMutationOptions({ appId, queryClient }))
+  const revoke = useMutation(revokeApiKeyMutationOptions({ slug, queryClient }))
+  const deleteKey = useMutation(deleteApiKeyMutationOptions({ slug, queryClient }))
   const t = useT()
   const format = useFormatters()
 
@@ -153,11 +153,11 @@ function EmptyState() {
   )
 }
 
-function NewKeyDialog({ appId, onCreated }: { appId: number; onCreated: (plaintext: string) => void }) {
+function NewKeyDialog({ slug, onCreated }: { slug: string; onCreated: (plaintext: string) => void }) {
   const [open, setOpen] = useState(false)
   const [name, setName] = useState('')
   const queryClient = useQueryClient()
-  const createKey = useMutation(createApiKeyMutationOptions({ appId, queryClient }))
+  const createKey = useMutation(createApiKeyMutationOptions({ slug, queryClient }))
   const t = useT()
 
   return (

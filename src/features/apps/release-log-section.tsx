@@ -13,7 +13,7 @@ import type { PublicApp } from '~/server/dashboard.ts'
  * endpoint, not AppForm's PATCH, so saving never fires the S3 storage probe
  * (ADR: release-log).
  */
-export function ReleaseLogSection({ appId, app }: { appId: number; app: PublicApp }) {
+export function ReleaseLogSection({ slug, app }: { slug: string; app: PublicApp }) {
   const t = useT()
   const queryClient = useQueryClient()
   const updateConfig = useMutation(updateNotesConfigMutationOptions({ queryClient }))
@@ -29,7 +29,7 @@ export function ReleaseLogSection({ appId, app }: { appId: number; app: PublicAp
     setError(null)
     setSaved(false)
     try {
-      await updateConfig.mutateAsync({ appId, ...value })
+      await updateConfig.mutateAsync({ slug, ...value })
       setSaved(true)
     } catch (cause) {
       setError(translateError(t, cause, t.common.requestFailed))

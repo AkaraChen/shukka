@@ -1,11 +1,11 @@
-import { and, desc, eq, sql } from 'drizzle-orm'
+import { and, desc, eq, isNotNull, sql } from 'drizzle-orm'
 import { randomToken } from '~/lib/crypto.ts'
 import { db } from '~/db/index.ts'
 import { artifacts, channels, pendingUploads, versions } from '~/db/schema.ts'
 import { ShukkaError } from '~/lib/errors.ts'
 import { deleteObjects, getObjectText, headObject, objectKey, presignPut, settingsFromApp } from '~/lib/storage.ts'
 import { isMetadataFile, parseUpdateMetadata, referencedArtifacts } from '~/lib/update-metadata.ts'
-import { createChannel, getChannel } from './channels.ts'
+import { createChannel, getChannel, getVersion } from './channels.ts'
 import type { App } from '~/db/schema.ts'
 
 const PENDING_TTL_SECONDS = 60 * 60
@@ -106,7 +106,11 @@ export type FinalizeResult = {
   artifacts: { filename: string; size: number; kind: 'metadata' | 'artifact' }[]
 }
 
-export async function finalizeUpload(app: App, uploadId: string): Promise<FinalizeResult> {
+export async function finalizeUpload(
+  app: App,
+  uploadId: string,
+  options: { release?: boolean } = {},
+): Promise<FinalizeResult> {
   const pending = db.select().from(pendingUploads).where(eq(pendingUploads.id, uploadId)).get()
   if (!pending) throw new ShukkaError('not_found', 'Upload not found or already finalized')
   if (pending.appId !== app.id) throw new ShukkaError('forbidden', 'Upload belongs to another app')
@@ -150,10 +154,18 @@ export async function finalizeUpload(app: App, uploadId: string): Promise<Finali
     }
   }
 
+  const now = nowSeconds()
+  const release = options.release === true
   const created = db.transaction((tx) => {
     const version = tx
       .insert(versions)
-      .values({ appId: app.id, channelId: channel.id, version: pending.version })
+      .values({
+        appId: app.id,
+        channelId: channel.id,
+        version: pending.version,
+        createdAt: now,
+        releasedAt: release ? now : null,
+      })
       .returning()
       .get()
 
@@ -169,7 +181,9 @@ export async function finalizeUpload(app: App, uploadId: string): Promise<Finali
       )
       .run()
 
-    tx.update(channels).set({ currentVersionId: version.id }).where(eq(channels.id, channel.id)).run()
+    if (release) {
+      tx.update(channels).set({ currentVersionId: version.id }).where(eq(channels.id, channel.id)).run()
+    }
     tx.delete(pendingUploads).where(eq(pendingUploads.id, uploadId)).run()
     return version
   })
@@ -184,6 +198,10 @@ export async function finalizeUpload(app: App, uploadId: string): Promise<Finali
 
 export function listArtifacts(versionId: number) {
   return db.select().from(artifacts).where(eq(artifacts.versionId, versionId)).orderBy(artifacts.filename).all()
+}
+
+export async function deleteVersionByName(app: App, channelName: string, version: string): Promise<void> {
+  await deleteVersion(app, getVersion(app.id, channelName, version).id)
 }
 
 /** Removes a version, its stored objects, and repoints the channel if it was current. */
@@ -206,7 +224,7 @@ export async function deleteVersion(app: App, versionId: number): Promise<void> 
       const fallback = tx
         .select()
         .from(versions)
-        .where(eq(versions.channelId, version.channelId))
+        .where(and(eq(versions.channelId, version.channelId), isNotNull(versions.releasedAt)))
         .orderBy(desc(versions.releasedAt))
         .get()
       tx.update(channels).set({ currentVersionId: fallback?.id ?? null }).where(eq(channels.id, channel.id)).run()

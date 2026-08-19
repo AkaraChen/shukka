@@ -84,6 +84,7 @@ async function main() {
   const channel = process.env.SHUKKA_CHANNEL || 'stable'
   const directory = resolve(process.env.SHUKKA_DIRECTORY || 'dist')
   const createChannel = process.env.SHUKKA_CREATE_CHANNEL === 'true'
+  const release = process.env.SHUKKA_RELEASE === 'true'
 
   const files = await collectFiles(directory)
   if (files.length === 0) fail(`No files to publish in ${directory}`)
@@ -106,7 +107,7 @@ async function main() {
     await putFile(target.uploadUrl, file)
   }
 
-  const result = await callApi(serverUrl, '/api/v1/upload/finalize', apiKey, { app, uploadId: init.uploadId })
+  const result = await callApi(serverUrl, '/api/v1/upload/finalize', apiKey, { app, uploadId: init.uploadId, release })
   process.stdout.write(`Published ${result.version} to ${result.channel}\n`)
 
   if (process.env.GITHUB_OUTPUT) {

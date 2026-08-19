@@ -27,9 +27,9 @@ function NewAppPage() {
           const { app } = await createApp.mutateAsync(values)
           // Disabled is the DB default — only an enabled step 3 needs the config write.
           if (releaseLog.enabled) {
-            await updateNotesConfig.mutateAsync({ appId: app.id, ...releaseLog })
+            await updateNotesConfig.mutateAsync({ slug: app.slug, ...releaseLog })
           }
-          await router.navigate({ to: '/apps/$appId', params: { appId: String(app.id) } })
+          await router.navigate({ to: '/apps/$appSlug', params: { appSlug: app.slug } })
         }}
       />
     </>

@@ -9,31 +9,46 @@ import { apiGet } from './apps.ts'
  */
 export const trendKeys = {
   all: () => ['trends'] as const,
-  channel: (appId: number, channelId: number, range: TrendRange) =>
-    [...trendKeys.all(), 'channel', appId, channelId, range] as const,
-  version: (appId: number, versionId: number) => [...trendKeys.all(), 'version', appId, versionId] as const,
+  channel: (slug: string, channel: string, range: TrendRange) =>
+    [...trendKeys.all(), 'channel', slug, channel, range] as const,
+  version: (slug: string, channel: string, version: string) =>
+    [...trendKeys.all(), 'version', slug, channel, version] as const,
 }
 
 export function channelTrendQueryOptions({
-  appId,
-  channelId,
+  slug,
+  channel,
   range,
 }: {
-  appId: number
-  channelId: number
+  slug: string
+  channel: string
   range: TrendRange
 }) {
   return queryOptions({
-    queryKey: trendKeys.channel(appId, channelId, range),
-    queryFn: () => apiGet<ChannelTrend>(`/api/admin/apps/${appId}/channels/${channelId}/trend?range=${range}`),
+    queryKey: trendKeys.channel(slug, channel, range),
+    queryFn: () =>
+      apiGet<ChannelTrend>(
+        `/api/v1/apps/${encodeURIComponent(slug)}/channels/${encodeURIComponent(channel)}/trend?range=${range}`,
+      ),
     staleTime: 30_000,
   })
 }
 
-export function versionTrendQueryOptions({ appId, versionId }: { appId: number; versionId: number }) {
+export function versionTrendQueryOptions({
+  slug,
+  channel,
+  version,
+}: {
+  slug: string
+  channel: string
+  version: string
+}) {
   return queryOptions({
-    queryKey: trendKeys.version(appId, versionId),
-    queryFn: () => apiGet<VersionTrend>(`/api/admin/apps/${appId}/versions/${versionId}/trend`),
+    queryKey: trendKeys.version(slug, channel, version),
+    queryFn: () =>
+      apiGet<VersionTrend>(
+        `/api/v1/apps/${encodeURIComponent(slug)}/channels/${encodeURIComponent(channel)}/versions/${encodeURIComponent(version)}/trend`,
+      ),
     staleTime: 30_000,
   })
 }

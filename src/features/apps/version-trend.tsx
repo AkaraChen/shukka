@@ -10,10 +10,18 @@ import type { VersionDetail } from '~/server/dashboard.ts'
  * First-14-days trend inside the version stats dialog. Radix mounts dialog
  * content on open, so mounting this component is what triggers the fetch.
  */
-export function VersionTrend({ version }: { version: VersionDetail }) {
+export function VersionTrend({
+  slug,
+  channel,
+  version,
+}: {
+  slug: string
+  channel: string
+  version: VersionDetail
+}) {
   const t = useT()
   const format = useFormatters()
-  const { data, isError } = useQuery(versionTrendQueryOptions({ appId: version.appId, versionId: version.id }))
+  const { data, isError } = useQuery(versionTrendQueryOptions({ slug, channel, version: version.version }))
 
   return (
     <div className="mt-5">

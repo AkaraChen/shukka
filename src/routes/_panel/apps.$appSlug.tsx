@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, useRouter } from '@tanstack/react-router'
-import { GitBranch, KeyRound, Plug, Settings2 } from 'lucide-react'
+import { BookOpen, GitBranch, KeyRound, Plug, Settings2 } from 'lucide-react'
 import { parseAsStringLiteral, useQueryState } from 'nuqs'
 import { useEffect, useState } from 'react'
 import { PageHeader, PageTabBar } from '~/components/page-header.tsx'
@@ -16,6 +16,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '~/components/ui/select'
 import { Skeleton } from '~/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs'
+import { ApiDocsPanel } from '~/features/apps/api-docs-panel.tsx'
 import { ApiKeysPanel } from '~/features/apps/api-keys-panel.tsx'
 import { AppForm } from '~/features/apps/app-form.tsx'
 import { ChannelsPanel } from '~/features/apps/channels-panel.tsx'
@@ -35,7 +36,7 @@ import { useViewRole } from '~/lib/role-context.ts'
 import type { AppDetail, ChannelDetail, PublicApp } from '~/server/dashboard.ts'
 import { highlightSnippet } from '~/server/highlight.ts'
 
-const TAB_VALUES = ['channels', 'keys', 'integration', 'settings'] as const
+const TAB_VALUES = ['channels', 'keys', 'integration', 'docs', 'settings'] as const
 
 /** Highlight the integration snippets during SSR so the first paint is colored. */
 async function highlightIntegrationSnippets(detail: AppDetail | undefined): Promise<IntegrationSnippets | null> {
@@ -54,9 +55,9 @@ async function highlightIntegrationSnippets(detail: AppDetail | undefined): Prom
   return Object.fromEntries(entries) as IntegrationSnippets
 }
 
-export const Route = createFileRoute('/_panel/apps/$appId')({
+export const Route = createFileRoute('/_panel/apps/$appSlug')({
   loader: async ({ context, params }) => {
-    const detail = await primeAppDetailQuery(context.queryClient, Number(params.appId))
+    const detail = await primeAppDetailQuery(context.queryClient, params.appSlug)
     const snippets = await highlightIntegrationSnippets(detail)
     return { detail, snippets }
   },
@@ -64,18 +65,14 @@ export const Route = createFileRoute('/_panel/apps/$appId')({
 })
 
 function AppDetailPage() {
-  const { appId } = Route.useParams()
-  const id = Number(appId)
+  const { appSlug } = Route.useParams()
   const { detail: initialData, snippets } = Route.useLoaderData()
-  const { data, isPending, error } = useQuery({ ...appDetailQueryOptions({ appId: id }), initialData })
+  const { data, isPending, error } = useQuery({ ...appDetailQueryOptions({ slug: appSlug }), initialData })
   const t = useT()
   const role = useViewRole()
   const [tab, setTab] = useQueryState('tab', parseAsStringLiteral(TAB_VALUES).withDefault('channels'))
-  // The URL may name a tab the current role can't see; fall back to channels.
-  const activeTab =
-    tab === 'channels' || tab === 'settings' || (role !== 'content' && (tab === 'keys' || tab === 'integration'))
-      ? tab
-      : 'channels'
+  const actorTab = tab === 'keys' || tab === 'integration' || tab === 'docs'
+  const activeTab = tab === 'channels' || tab === 'settings' || (role !== 'content' && actorTab) ? tab : 'channels'
 
   if (isPending) return <Skeleton className="h-64 rounded-xl" />
   if (error || !data) {
@@ -105,6 +102,9 @@ function AppDetailPage() {
                 <TabsTrigger value="integration" className="flex-none px-0">
                   <Plug /> {t.apps.detail.integration}
                 </TabsTrigger>
+                <TabsTrigger value="docs" className="flex-none px-0">
+                  <BookOpen /> {t.apps.detail.apiDocs}
+                </TabsTrigger>
               </>
             ) : null}
             <TabsTrigger value="settings" className="flex-none px-0">
@@ -114,12 +114,12 @@ function AppDetailPage() {
         </PageTabBar>
 
         <TabsContent value="channels" className="mt-6">
-          <ChannelsPanel appId={id} app={data.app} channels={data.channels} />
+          <ChannelsPanel slug={data.app.slug} app={data.app} channels={data.channels} />
         </TabsContent>
         {role !== 'content' ? (
           <>
             <TabsContent value="keys" className="mt-6">
-              <ApiKeysPanel appId={id} keys={data.keys} />
+              <ApiKeysPanel slug={data.app.slug} keys={data.keys} />
             </TabsContent>
             <TabsContent value="integration" className="mt-6">
               {snippets ? (
@@ -128,10 +128,13 @@ function AppDetailPage() {
                 <IntegrationPanelLoader app={data.app} channels={data.channels} />
               )}
             </TabsContent>
+            <TabsContent value="docs" className="mt-6">
+              <ApiDocsPanel />
+            </TabsContent>
           </>
         ) : null}
         <TabsContent value="settings" className="mt-6">
-          <AppSettings appId={id} app={data.app} channels={data.channels} />
+          <AppSettings slug={data.app.slug} app={data.app} channels={data.channels} />
         </TabsContent>
       </Tabs>
     </>
@@ -176,10 +179,10 @@ function IntegrationPanelLoader({ app, channels }: { app: PublicApp; channels: A
 const SETTINGS_SECTIONS = ['general', 'storage', 'release-log', 'danger'] as const
 type SettingsSection = (typeof SETTINGS_SECTIONS)[number]
 
-function AppSettings({ appId, app, channels }: { appId: number; app: PublicApp; channels: ChannelDetail[] }) {
+function AppSettings({ slug, app, channels }: { slug: string; app: PublicApp; channels: ChannelDetail[] }) {
   const router = useRouter()
   const queryClient = useQueryClient()
-  const updateApp = useMutation(updateAppMutationOptions({ appId, queryClient }))
+  const updateApp = useMutation(updateAppMutationOptions({ slug, queryClient }))
   const deleteApp = useMutation(deleteAppMutationOptions({ queryClient }))
   const t = useT()
   const role = useViewRole()
@@ -187,8 +190,6 @@ function AppSettings({ appId, app, channels }: { appId: number; app: PublicApp; 
     'section',
     parseAsStringLiteral(SETTINGS_SECTIONS).withDefault('general'),
   )
-  // The URL may name a section the current role can't see: content only gets
-  // the release-log section, and danger stays admin-only.
   const activeSection: SettingsSection =
     role === 'content' ? 'release-log' : section === 'danger' && role !== 'admin' ? 'general' : section
 
@@ -229,7 +230,7 @@ function AppSettings({ appId, app, channels }: { appId: number; app: PublicApp; 
 
       <div className="min-w-0 max-w-2xl flex-1">
         {activeSection === 'release-log' ? (
-          <ReleaseLogSection appId={appId} app={app} />
+          <ReleaseLogSection slug={slug} app={app} />
         ) : activeSection === 'danger' ? (
           <div className="space-y-10">
             <section>
@@ -240,14 +241,14 @@ function AppSettings({ appId, app, channels }: { appId: number; app: PublicApp; 
                 className="mt-4"
                 onClick={async () => {
                   if (!confirm(t.apps.detail.deleteConfirm(app.name))) return
-                  await deleteApp.mutateAsync(appId)
+                  await deleteApp.mutateAsync(slug)
                   await router.navigate({ to: '/apps' })
                 }}
               >
                 {t.apps.detail.deleteButton}
               </Button>
             </section>
-            <DeleteChannelSection appId={appId} channels={channels} />
+            <DeleteChannelSection slug={slug} channels={channels} />
           </div>
         ) : (
           <AppForm
@@ -268,16 +269,14 @@ function AppSettings({ appId, app, channels }: { appId: number; app: PublicApp; 
  * is rare and irreversible, and a footer button under the versions table was
  * too easy to misclick.
  */
-function DeleteChannelSection({ appId, channels }: { appId: number; channels: ChannelDetail[] }) {
+function DeleteChannelSection({ slug, channels }: { slug: string; channels: ChannelDetail[] }) {
   const queryClient = useQueryClient()
-  const deleteChannel = useMutation(deleteChannelMutationOptions({ appId, queryClient }))
-  const [channelId, setChannelId] = useState<string | null>(null)
-  // The channel pending deletion is captured so the dialog content stays
-  // stable while it closes after a successful delete.
+  const deleteChannel = useMutation(deleteChannelMutationOptions({ slug, queryClient }))
+  const [channelName, setChannelName] = useState<string | null>(null)
   const [pendingDelete, setPendingDelete] = useState<ChannelDetail | null>(null)
   const t = useT()
 
-  const selected = channels.find((channel) => String(channel.id) === channelId)
+  const selected = channels.find((channel) => channel.name === channelName)
 
   if (channels.length === 0) return null
 
@@ -286,13 +285,13 @@ function DeleteChannelSection({ appId, channels }: { appId: number; channels: Ch
       <h3 className="text-base text-destructive">{t.apps.detail.deleteChannelTitle}</h3>
       <p className="mt-1 text-sm text-muted-foreground">{t.apps.detail.deleteChannelDetail}</p>
       <div className="mt-4 flex flex-wrap items-center gap-2">
-        <Select value={channelId ?? ''} onValueChange={setChannelId}>
+        <Select value={channelName ?? ''} onValueChange={setChannelName}>
           <SelectTrigger className="w-44 shadow-none" aria-label={t.apps.detail.deleteChannelLabel}>
             <SelectValue placeholder={t.apps.detail.deleteChannelLabel} />
           </SelectTrigger>
           <SelectContent className="shadow-none">
             {channels.map((channel) => (
-              <SelectItem key={channel.id} value={String(channel.id)}>
+              <SelectItem key={channel.name} value={channel.name}>
                 {channel.name}
               </SelectItem>
             ))}
@@ -323,9 +322,9 @@ function DeleteChannelSection({ appId, channels }: { appId: number; channels: Ch
               disabled={deleteChannel.isPending}
               onClick={async () => {
                 if (!pendingDelete) return
-                await deleteChannel.mutateAsync(pendingDelete.id)
+                await deleteChannel.mutateAsync(pendingDelete.name)
                 setPendingDelete(null)
-                setChannelId(null)
+                setChannelName(null)
               }}
             >
               {t.apps.detail.deleteChannelConfirm}

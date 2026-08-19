@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm'
+import { and, eq, isNotNull } from 'drizzle-orm'
 import { db } from '~/db/index.ts'
 import { artifacts, versions } from '~/db/schema.ts'
 import { ShukkaError } from '~/lib/errors.ts'
@@ -43,7 +43,7 @@ export async function resolveFeedRequest(
     .select({ s3Key: artifacts.s3Key, versionId: artifacts.versionId })
     .from(artifacts)
     .innerJoin(versions, eq(artifacts.versionId, versions.id))
-    .where(and(eq(versions.channelId, channel.id), eq(artifacts.filename, filename)))
+    .where(and(eq(versions.channelId, channel.id), eq(artifacts.filename, filename), isNotNull(versions.releasedAt)))
     .get()
   if (!artifact) throw new ShukkaError('not_found', `${filename} not found on channel "${channelName}"`)
 

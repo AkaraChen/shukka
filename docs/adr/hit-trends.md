@@ -19,7 +19,7 @@ Accepted.
 - **写路径：计数器与 bucket 同事务双写**。`recordHit(versionId, kind)` 在一个同步 `db.transaction` 内先递增 `versions.metadata_hits/artifact_hits`，再 `INSERT … ON CONFLICT DO UPDATE count+1` upsert bucket。计数器仍是总量权威；bucket 自部署起累积，**不做历史回溯**。
 - **时间边界一律 UTC**：小时界 `floor(t/3600)*3600`，天界 `floor(t/86400)*86400`，整数运算；坐标轴标签 `timeZone: 'UTC'` 固定，与分桶一致。
 - **粒度按范围分档**：7 天 → 小时点（168 个）；30 / 90 天 → UTC 天点。无命中时段补零，序列定长并对齐当前小时/天；版本趋势固定 14 天窗口，未来日期直接省略（不补零）。
-- **读取：独立 admin endpoint + 独立 queryKey**。`GET /api/admin/apps/{appId}/channels/{channelId}/trend?range=7|30|90` 与 `…/versions/{versionId}/trend`，session 鉴权；不并入 appDetail，不做 SSR priming（图表在 lazy 边界之后，首屏不需要），staleTime 30s，无 mutation 使 trend key 失效。
+- **读取：独立 endpoint + 独立 queryKey**。`GET /api/v1/apps/{appSlug}/channels/{channel}/trend?range=7|30|90` 与 `…/versions/{version}/trend`，session 或绑定该 app 的 API key；不并入 appDetail，不做 SSR priming（图表在 lazy 边界之后，首屏不需要），staleTime 30s，无 mutation 使 trend key 失效。
 - **渲染：recharts v3，React.lazy 代码分割**。唯一的 recharts importer 是懒加载的 inner 组件，服务端永不加载；叠加面积图（非堆叠柱状）：downloads 用 `var(--flare)` 描边 + 10% 填充，checks 用 45% ink 描边不填充；网格、刻度、tooltip 全部走 CSS 变量，主题切换零 JS。
 - **共享契约独立于服务端模块**：`src/lib/trends.ts` 只放类型与常量（range 集合、guard、点形状），不 import db/react，客户端可安全 value-import。
 

@@ -63,7 +63,9 @@ export const versions = sqliteTable(
       .notNull()
       .references(() => channels.id, { onDelete: 'cascade' }),
     version: text('version').notNull(),
-    releasedAt: integer('released_at').notNull().default(now),
+    createdAt: integer('created_at').notNull().default(now),
+    /** Null = draft; set once on first promote or `release: true` finalize. */
+    releasedAt: integer('released_at'),
     metadataHits: integer('metadata_hits').notNull().default(0),
     artifactHits: integer('artifact_hits').notNull().default(0),
   },

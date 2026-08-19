@@ -31,6 +31,10 @@ inputs:
     description: 'Create the channel if it does not exist yet'
     required: false
     default: 'false'
+  release:
+    description: 'If true, finalize goes live immediately. Default false leaves a draft.'
+    required: false
+    default: 'false'
 
 outputs:
   version:
@@ -53,4 +57,5 @@ runs:
         SHUKKA_DIRECTORY: ${{ inputs.directory }}
         SHUKKA_VERSION: ${{ inputs.version }}
         SHUKKA_CREATE_CHANNEL: ${{ inputs.create-channel }}
+        SHUKKA_RELEASE: ${{ inputs.release }}
       run: node "$GITHUB_ACTION_PATH/scripts/shukka-upload.mjs"

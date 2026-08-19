@@ -32,7 +32,7 @@ export function AppNav() {
             apps.map((app) => (
               <SidebarMenuItem key={app.id}>
                 <SidebarMenuButton asChild>
-                  <Link to="/apps/$appId" params={{ appId: String(app.id) }} activeProps={{ 'data-active': true }}>
+                  <Link to="/apps/$appSlug" params={{ appSlug: app.slug }} activeProps={{ 'data-active': true }}>
                     <Boxes />
                     <span className="truncate">{app.name}</span>
                   </Link>

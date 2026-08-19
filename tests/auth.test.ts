@@ -89,6 +89,37 @@ describe('admin session', () => {
   })
 })
 
+describe('app actor', () => {
+  beforeEach(() => {
+    db.delete(admin).run()
+    db.delete(sessions).run()
+    db.delete(apps).run()
+  })
+
+  it('resolves a session actor and a matching key, and rejects a foreign key', async () => {
+    auth.initializeAdmin('correct horse battery')
+    const token = auth.login('correct horse battery')
+    const acme = await makeApp('acme')
+    const { plaintext } = keyFor(acme.id)
+
+    const session = new Request('https://shukka.test/api/v1/apps/acme', {
+      headers: { cookie: `${auth.SESSION_COOKIE}=${token}` },
+    })
+    expect(auth.requireAppActor(session, 'acme').via).toBe('session')
+    expect(auth.requireAppActor(session, 'acme').app.slug).toBe('acme')
+
+    const keyReq = new Request('https://shukka.test/api/v1/apps/acme', {
+      headers: { authorization: `Bearer ${plaintext}` },
+    })
+    expect(auth.requireAppActor(keyReq, 'acme').via).toBe('key')
+    expect(() => auth.requireAppActor(keyReq, 'other')).toThrow(/not authorized/)
+
+    expect(() => auth.requireSessionApp(keyReq, 'acme')).toThrow(/admin session/)
+    expect(auth.requireSessionApp(session, 'acme').slug).toBe('acme')
+    expect(() => auth.requireSessionApp(session, 'missing')).toThrow(/not found/)
+  })
+})
+
 describe('api keys', () => {
   beforeEach(() => {
     db.delete(apps).run()

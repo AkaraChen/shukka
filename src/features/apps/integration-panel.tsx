@@ -1,4 +1,5 @@
-import { Bot, Braces, Check, Sparkles, Workflow } from 'lucide-react'
+import { Link } from '@tanstack/react-router'
+import { BookOpen, Bot, Braces, Check, Sparkles, Workflow } from 'lucide-react'
 import { useState } from 'react'
 import type { ReactNode } from 'react'
 import { CopyBlock } from '~/components/copy-block.tsx'
@@ -67,7 +68,7 @@ Facts:
 Upload protocol (JSON bodies; errors are { "error": <code>, "message": <string> }):
 1. POST ${serverUrl}/api/v1/upload/init with { "app": "${app.slug}", "channel": "${channelName}", "version": "<version>", "files": [{ "filename": "<name>", "size": <bytes> }, ...] } — the file list is every file in the electron-builder output directory (installers, *.blockmap, latest*.yml) and must include at least one .yml. The response contains uploadId and, per file, a presigned uploadUrl.
 2. PUT each file's raw bytes to its uploadUrl (direct to S3; URLs expire one hour after init).
-3. POST ${serverUrl}/api/v1/upload/finalize with { "uploadId": "<id>", "app": "${app.slug}" } — Shukka verifies the objects, parses the yml, and flips the channel to the new version atomically.
+3. POST ${serverUrl}/api/v1/upload/finalize with { "uploadId": "<id>", "app": "${app.slug}" } — Shukka verifies the objects, parses the yml, and creates a draft. Pass "release": true to go live in the same call. Promote later with PATCH /api/v1/apps/${app.slug}/channels/${channelName} { "currentVersion": "<version>" }.
 
 Do all of the following:
 1. In electron-builder config, set publish to the generic provider pointing at the feed URL above, with channel "${channelName}".
@@ -122,7 +123,17 @@ Do all of the following:
             <PublishMethod
               detail={t.integration.httpApiDetail}
               snippet={snippets.httpApi}
-              action={<CopyAgentPrompt value={httpApiPrompt} />}
+              action={
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button variant="outline" size="sm" asChild>
+                    <Link to="/apps/$appSlug" params={{ appSlug: app.slug }} search={{ tab: 'docs' }}>
+                      <BookOpen />
+                      {t.integration.openApiDocs}
+                    </Link>
+                  </Button>
+                  <CopyAgentPrompt value={httpApiPrompt} />
+                </div>
+              }
             />
           </TabsContent>
           <TabsContent value="agent" className="mt-4">

@@ -22,7 +22,7 @@ import { Tabs, TabsList, TabsTrigger } from '~/components/ui/tabs'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '~/components/ui/tooltip'
 import { useFormatters, useT } from '~/lib/i18n/index.ts'
 import { useViewRole } from '~/lib/role-context.ts'
-import { canEditReleaseNotes, canSeeTrafficStats } from '~/lib/role.ts'
+import { canEditReleaseNotes, canPromote, canSeeTrafficStats } from '~/lib/role.ts'
 import { cn } from '~/lib/utils.ts'
 import { ChannelTrend } from './channel-trend.tsx'
 import { platformsOf } from './platforms.ts'
@@ -40,7 +40,7 @@ import type { ChannelDetail, PublicApp, VersionDetail } from '~/server/dashboard
  * new-channel action. The content below sits directly on the page — no card
  * wrapper.
  */
-export function ChannelsPanel({ appId, app, channels }: { appId: number; app: PublicApp; channels: ChannelDetail[] }) {
+export function ChannelsPanel({ slug, app, channels }: { slug: string; app: PublicApp; channels: ChannelDetail[] }) {
   const role = useViewRole()
   const t = useT()
   const [channelName, setChannelName] = useQueryState('channel', parseAsString)
@@ -56,7 +56,7 @@ export function ChannelsPanel({ appId, app, channels }: { appId: number; app: Pu
           <GitBranch className="size-5 text-foreground/30" />
           <p className="text-sm text-muted-foreground">{t.channels.none}</p>
           {role !== 'content' ? (
-            <NewChannelDialog appId={appId} onCreated={(name) => void setChannelName(name)} />
+            <NewChannelDialog slug={slug} onCreated={(name) => void setChannelName(name)} />
           ) : null}
         </div>
       </section>
@@ -93,12 +93,12 @@ export function ChannelsPanel({ appId, app, channels }: { appId: number; app: Pu
         {role !== 'content' ? (
           <>
             <FeedUrlRow url={activeChannel.feedUrl} className="min-w-0 flex-1" />
-            <NewChannelDialog appId={appId} onCreated={(name) => void setChannelName(name)} />
+            <NewChannelDialog slug={slug} onCreated={(name) => void setChannelName(name)} />
           </>
         ) : null}
       </div>
 
-      <ChannelView appId={appId} app={app} channel={activeChannel} />
+      <ChannelView slug={slug} app={app} channel={activeChannel} />
     </section>
   )
 }
@@ -109,7 +109,7 @@ export function ChannelsPanel({ appId, app, channels }: { appId: number; app: Pu
  * table below on a deeper tonal step. Hierarchy comes from size and the
  * ink-opacity ladder, never from weight.
  */
-function ChannelView({ appId, app, channel }: { appId: number; app: PublicApp; channel: ChannelDetail }) {
+function ChannelView({ slug, app, channel }: { slug: string; app: PublicApp; channel: ChannelDetail }) {
   const current = channel.versions.find((version) => version.isCurrent)
   const t = useT()
   const format = useFormatters()
@@ -121,7 +121,7 @@ function ChannelView({ appId, app, channel }: { appId: number; app: PublicApp; c
         <div className="mt-6 flex flex-wrap items-baseline gap-x-6 gap-y-2">
           <p className="font-mono text-2xl tracking-tight tabular-nums">v{current.version}</p>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-sm text-muted-foreground">
-            <span>{t.channels.released(format.when(current.releasedAt))}</span>
+            <span>{t.channels.released(format.when(current.releasedAt ?? current.createdAt))}</span>
             {platformsOf(current).map((platform) => (
               <Badge key={platform} variant="outline" className="text-muted-foreground">
                 {platform}
@@ -146,8 +146,8 @@ function ChannelView({ appId, app, channel }: { appId: number; app: PublicApp; c
             {t.channels.emptyPre}
             {role !== 'content' ? (
               <Link
-                to="/apps/$appId"
-                params={{ appId: String(appId) }}
+                to="/apps/$appSlug"
+                params={{ appSlug: slug }}
                 search={(prev) => ({ ...prev, tab: 'integration' })}
                 className="text-foreground/70 underline decoration-foreground/30 underline-offset-2 transition-colors hover:text-foreground hover:decoration-foreground/60"
               >
@@ -161,9 +161,9 @@ function ChannelView({ appId, app, channel }: { appId: number; app: PublicApp; c
         </div>
       )}
 
-      {canSeeTrafficStats(role) && channel.versions.length > 0 ? <ChannelTrend appId={appId} channelId={channel.id} /> : null}
+      {canSeeTrafficStats(role) && channel.versions.length > 0 ? <ChannelTrend slug={slug} channel={channel.name} /> : null}
 
-      {channel.versions.length > 0 ? <HistoryTable appId={appId} app={app} channel={channel} /> : null}
+      {channel.versions.length > 0 ? <HistoryTable slug={slug} app={app} channel={channel} /> : null}
     </>
   )
 }
@@ -204,10 +204,10 @@ function RowAction({ label, children }: { label: string; children: ReactNode }) 
   )
 }
 
-function HistoryTable({ appId, app, channel }: { appId: number; app: PublicApp; channel: ChannelDetail }) {
+function HistoryTable({ slug, app, channel }: { slug: string; app: PublicApp; channel: ChannelDetail }) {
   const queryClient = useQueryClient()
-  const setCurrent = useMutation(setCurrentVersionMutationOptions({ appId, queryClient }))
-  const deleteVersion = useMutation(deleteVersionMutationOptions({ appId, queryClient }))
+  const setCurrent = useMutation(setCurrentVersionMutationOptions({ slug, queryClient }))
+  const deleteVersion = useMutation(deleteVersionMutationOptions({ slug, queryClient }))
   const t = useT()
   const format = useFormatters()
   const role = useViewRole()
@@ -231,21 +231,29 @@ function HistoryTable({ appId, app, channel }: { appId: number; app: PublicApp; 
                     {version.version}
                     {version.isCurrent ? (
                       <Badge className="border-flare/30 bg-flare/10 font-sans text-flare">{t.channels.current}</Badge>
+                    ) : version.isDraft ? (
+                      <Badge variant="outline" className="font-sans text-muted-foreground">
+                        {t.channels.draft}
+                      </Badge>
                     ) : null}
                   </span>
                 </TableCell>
-                <TableCell className="text-foreground/40">{format.when(version.releasedAt)}</TableCell>
+                <TableCell className="text-foreground/40">
+                  {version.isDraft
+                    ? format.when(version.createdAt)
+                    : format.when(version.releasedAt ?? version.createdAt)}
+                </TableCell>
                 <TableCell className="text-right whitespace-nowrap">
                   <TooltipProvider>
                     <div className="flex items-center justify-end gap-2">
-                      {version.isCurrent ? null : (
-                        <RowAction label={t.channels.makeCurrent}>
+                      {version.isCurrent || !canPromote(role) ? null : (
+                        <RowAction label={version.isDraft ? t.channels.promote : t.channels.makeCurrent}>
                           <Button
                             variant="ghost"
                             size="icon"
                             className="size-7 text-muted-foreground"
-                            aria-label={t.channels.makeCurrent}
-                            onClick={() => setCurrent.mutate({ channelId: channel.id, versionId: version.id })}
+                            aria-label={version.isDraft ? t.channels.promote : t.channels.makeCurrent}
+                            onClick={() => setCurrent.mutate({ channel: channel.name, version: version.version })}
                           >
                             <ArrowUpToLine />
                           </Button>
@@ -260,13 +268,19 @@ function HistoryTable({ appId, app, channel }: { appId: number; app: PublicApp; 
                             aria-label={t.releaseLog.editNotes(version.version)}
                             asChild
                           >
-                            <Link to="/apps/$appId/notes/$versionId" params={{ appId: String(appId), versionId: String(version.id) }}>
+                            <Link
+                              to="/apps/$appSlug/notes/$version"
+                              params={{ appSlug: slug, version: version.version }}
+                              search={{ channel: channel.name }}
+                            >
                               <FileText />
                             </Link>
                           </Button>
                         </RowAction>
                       ) : null}
-                      {canSeeTrafficStats(role) ? <VersionStatsDialog version={version} /> : null}
+                      {canSeeTrafficStats(role) ? (
+                        <VersionStatsDialog slug={slug} channel={channel.name} version={version} />
+                      ) : null}
                       <RowAction label={t.common.delete}>
                         <Button
                           variant="ghost"
@@ -275,7 +289,7 @@ function HistoryTable({ appId, app, channel }: { appId: number; app: PublicApp; 
                           aria-label={t.channels.deleteVersion(version.version)}
                           onClick={() => {
                             if (confirm(t.channels.deleteVersionConfirm(version.version))) {
-                              deleteVersion.mutate(version.id)
+                              deleteVersion.mutate({ channel: channel.name, version: version.version })
                             }
                           }}
                         >
@@ -295,7 +309,15 @@ function HistoryTable({ appId, app, channel }: { appId: number; app: PublicApp; 
 }
 
 /** Per-version counters live behind a dialog so the table stays scannable. */
-function VersionStatsDialog({ version }: { version: VersionDetail }) {
+function VersionStatsDialog({
+  slug,
+  channel,
+  version,
+}: {
+  slug: string
+  channel: string
+  version: VersionDetail
+}) {
   const t = useT()
 
   return (
@@ -330,17 +352,17 @@ function VersionStatsDialog({ version }: { version: VersionDetail }) {
             <p className="mt-1 text-xs text-foreground/40">{t.channels.downloads}</p>
           </div>
         </div>
-        <VersionTrend version={version} />
+        {version.isDraft ? null : <VersionTrend slug={slug} channel={channel} version={version} />}
       </DialogContent>
     </Dialog>
   )
 }
 
-function NewChannelDialog({ appId, onCreated }: { appId: number; onCreated: (name: string) => void }) {
+function NewChannelDialog({ slug, onCreated }: { slug: string; onCreated: (name: string) => void }) {
   const [open, setOpen] = useState(false)
   const [name, setName] = useState('')
   const queryClient = useQueryClient()
-  const createChannel = useMutation(createChannelMutationOptions({ appId, queryClient }))
+  const createChannel = useMutation(createChannelMutationOptions({ slug, queryClient }))
   const t = useT()
 
   return (

@@ -38,7 +38,7 @@ const { app } = await call('/api/admin/apps', 'POST', {
   s3ForcePathStyle: true,
 })
 
-const { plaintext } = await call(`/api/admin/apps/${app.id}/keys`, 'POST', { name: 'ci' })
+const { plaintext } = await call(`/api/v1/apps/${app.slug}/keys`, 'POST', { name: 'ci' })
 
 process.stdout.write(`Provisioned app ${app.slug} (id ${app.id})\n`)
 if (process.env.GITHUB_OUTPUT) {

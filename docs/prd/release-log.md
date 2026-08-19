@@ -21,7 +21,7 @@ electron-updater 支持在更新弹窗中展示 release notes，CLI 与仪表盘
 5. Note 在发布后**任意时间可编辑**；版本本身保持不可变（既有不变量不变）。Note 是挂在版本上的可变元数据。
 6. 创建应用向导新增第 3 步：release log 设置（启用开关 + locale 列表 + 回退 locale 选择）——这是「CMS」问题的全部范围，不做通用 CMS。
 7. 功能按 app 开关（默认关闭）；未启用的 app 不提供 notes 读写入口。
-8. 面板：app 设置页增加「Release log」分区（左侧导航驱动，nuqs `section` 参数）；Channels 标签页历史行在 app 已启用 release log 时提供 notes 编辑入口，跳转到**独立的 notes 编辑页面**（`/apps/{appId}/notes/{versionId}`，按 locale 切换编辑）；notes 编辑对 content 角色可见可编辑，配置仅 admin/developer。
+8. 面板：app 设置页增加「Release log」分区（左侧导航驱动，nuqs `section` 参数）；Channels 标签页历史行在 app 已启用 release log 时提供 notes 编辑入口，跳转到**独立的 notes 编辑页面**（`/apps/{appSlug}/notes/{version}`，按 locale 切换编辑）；draft 与已发布版本都可写 notes；公开读取接口只返回已发布版本。notes 编辑对 content 角色可见可编辑，配置仅 admin/developer。
 9. 编辑器为所见即所得的 Milkdown（Crepe）：支持从 Word 粘贴（HTML 剪贴板解析）与直接粘贴 Markdown 源文（自动解析为富文本）；编辑器颜色变量映射到面板主题 token，明暗主题跟随。
 
 ## Non-goals

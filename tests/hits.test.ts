@@ -63,7 +63,7 @@ async function publish(app: Awaited<ReturnType<typeof createApp>>, channel: stri
   for (const file of init.files) {
     objects.set(file.key, file.filename === 'latest.yml' ? metadataFor(version, installer) : 'binary')
   }
-  return { init, result: await finalizeUpload(app, init.uploadId), installer }
+  return { init, result: await finalizeUpload(app, init.uploadId, { release: true }), installer }
 }
 
 function bucketSum(versionId: number, kind: 'metadata' | 'artifact'): number {
@@ -194,19 +194,21 @@ describe('versionTrend', () => {
     const app = await createApp(appInput)
     const { result } = await publish(app, 'stable', '1.0.0')
     const version = db.select().from(versions).where(eq(versions.id, result.versionId)).get()!
-    const releaseDay = Math.floor(version.releasedAt / DAY) * DAY
+    expect(version.releasedAt).toEqual(expect.any(Number))
+    const releasedAt = version.releasedAt as number
+    const releaseDay = Math.floor(releasedAt / DAY) * DAY
 
-    recordHit(result.versionId, 'artifact', version.releasedAt)
-    recordHit(result.versionId, 'artifact', version.releasedAt + DAY)
+    recordHit(result.versionId, 'artifact', releasedAt)
+    recordHit(result.versionId, 'artifact', releasedAt + DAY)
 
-    const trend = versionTrend(app.id, result.versionId, version.releasedAt + 3 * DAY)
+    const trend = versionTrend(app.id, result.versionId, releasedAt + 3 * DAY)
     expect(trend.points.at(0)?.t).toBe(releaseDay)
     expect(trend.points).toHaveLength(4)
     expect(trend.points.at(-1)?.t).toBe(releaseDay + 3 * DAY)
     expect(trend.points[0]?.artifact).toBe(1)
     expect(trend.points[1]?.artifact).toBe(1)
 
-    const full = versionTrend(app.id, result.versionId, version.releasedAt + 30 * DAY)
+    const full = versionTrend(app.id, result.versionId, releasedAt + 30 * DAY)
     expect(full.points).toHaveLength(14)
     expect(full.points.at(-1)?.t).toBe(releaseDay + 13 * DAY)
   })

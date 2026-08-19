@@ -9,7 +9,7 @@ All request and response bodies are JSON. Errors carry a stable machine-readable
 | Code | Status | Meaning |
 |------|--------|---------|
 | `unauthorized` | 401 | Missing/invalid session or API key |
-| `forbidden` | 403 | Key is valid but bound to a different app |
+| `forbidden` | 403 | Key is valid but not allowed for this operation |
 | `not_found` | 404 | App, channel, version or key does not exist |
 | `conflict` | 409 | Duplicate version, missing artifact, expired upload |
 | `invalid_request` | 400 | Malformed payload |
@@ -51,11 +51,13 @@ URLs expire an hour after `init`.
 ### `POST /api/v1/upload/finalize`
 
 ```json
-{ "uploadId": "…", "app": "my-app" }
+{ "uploadId": "…", "app": "my-app", "release": false }
 ```
 
 Verifies every object exists (and matches any declared size), parses each yml, and
-requires its `version` to equal the declared version. On success:
+requires its `version` to equal the declared version. Default is a **draft** (feed
+unchanged). `"release": true` writes `releasedAt` and flips the channel current
+version atomically.
 
 ```json
 {
@@ -66,7 +68,29 @@ requires its `version` to equal the declared version. On success:
 }
 ```
 
-## Admin API — session cookie
+## App API — session cookie or Bearer key bound to `{appSlug}`
+
+Keys may read and write the bound app (settings, channels, versions, notes, current
+version, trends). Keys may **not** delete the app or manage API keys.
+
+| Method & path | Purpose |
+|---------------|---------|
+| `GET /api/v1/apps/{appSlug}` | Full detail: channels, versions, artifacts, keys, feed URLs |
+| `PATCH /api/v1/apps/{appSlug}` | Same payload as create; omit `s3SecretAccessKey` to keep it |
+| `DELETE /api/v1/apps/{appSlug}` | Deletes the app — **session only** |
+| `GET/POST /api/v1/apps/{appSlug}/channels` | List / create (`{ name }`; name is a URL token) |
+| `PATCH /api/v1/apps/{appSlug}/channels/{channel}` | `{ currentVersion }` — version string; `null` clears current; draft is promoted in the same transaction |
+| `DELETE /api/v1/apps/{appSlug}/channels/{channel}` | Delete a channel, its version records, and their S3 objects |
+| `DELETE /api/v1/apps/{appSlug}/channels/{channel}/versions/{version}` | Delete a version and its S3 objects |
+| `GET /api/v1/apps/{appSlug}/channels/{channel}/trend` | Hit trend (`?range=7\|30\|90`) |
+| `GET /api/v1/apps/{appSlug}/channels/{channel}/versions/{version}/trend` | Version trend (empty for drafts) |
+| `GET /api/v1/apps/{appSlug}/channels/{channel}/versions/{version}/notes` | Editor notes |
+| `PUT/DELETE …/notes/{locale}` | Upsert / delete a locale note |
+| `PUT /api/v1/apps/{appSlug}/notes-config` | Release-log config (no S3 probe) |
+| `GET/POST /api/v1/apps/{appSlug}/keys` | List / create keys — **session only** |
+| `DELETE /api/v1/apps/{appSlug}/keys/{keyId}` | Revoke, or `?mode=delete` a revoked key — **session only** |
+
+## Admin API — session cookie only
 
 | Method & path | Purpose |
 |---------------|---------|
@@ -75,19 +99,9 @@ requires its `version` to equal the declared version. On success:
 | `POST /api/admin/login` | `{ password }` — returns a session cookie |
 | `POST /api/admin/logout` | Drops the current session |
 | `POST /api/admin/password` | `{ currentPassword, newPassword }` — invalidates all sessions |
-| `GET /api/admin/apps` | App summaries with channel and version counts |
+| `GET /api/admin/apps` | App summaries |
 | `POST /api/admin/apps` | Create an app (see payload below) |
-| `GET /api/admin/apps/{appId}` | Full detail: channels, versions, artifacts, keys, feed URLs |
-| `PATCH /api/admin/apps/{appId}` | Same payload as create; omit `s3SecretAccessKey` to keep it |
-| `DELETE /api/admin/apps/{appId}` | Deletes the app and every stored object |
-| `GET /api/admin/apps/{appId}/channels` | List channels |
-| `POST /api/admin/apps/{appId}/channels` | `{ name }` |
-| `PATCH /api/admin/apps/{appId}/channels/{channelId}` | `{ currentVersionId }` — `null` clears the feed |
-| `DELETE /api/admin/apps/{appId}/channels/{channelId}` | Delete a channel, its version records, and their S3 objects |
-| `DELETE /api/admin/apps/{appId}/versions/{versionId}` | Delete a version and its S3 objects |
-| `GET /api/admin/apps/{appId}/keys` | List keys (hints only) |
-| `POST /api/admin/apps/{appId}/keys` | `{ name }` — response contains `plaintext` exactly once |
-| `DELETE /api/admin/apps/{appId}/keys/{keyId}` | Revoke a key |
+| `POST /api/admin/storage/test` | Probe S3 settings without saving |
 
 ### App payload
 
@@ -116,5 +130,5 @@ requires its `version` to equal the declared version. On success:
 | `GET /api/update/{app}/{channel}/{artifact}` | `302` to a presigned S3 URL, valid for an hour |
 
 Metadata resolves against the channel's current version. Artifacts resolve by
-filename across every version on the channel, so a download that started before a
-release switch still completes.
+filename across **released** versions on the channel (`releasedAt` set). Draft
+filenames 404 the same as missing files.

@@ -74,8 +74,9 @@ curl -s "$SHUKKA_URL/api/admin/apps" -H "cookie: $COOKIE"
 
 - Creating an app requires working S3 settings — Shukka writes and deletes a
   probe object before saving, so bad credentials fail at creation, not at release.
-- A `stable` channel is created with the app. Channel names are free-form and
-  must match electron-builder's `channel` option exactly.
+- A `stable` channel is created with the app. Channel names are URL tokens
+  (`^[a-z0-9][a-z0-9_-]{0,62}$`) and must match electron-builder's `channel`
+  option exactly.
 - An API key's plaintext appears **once**, in the creation response. If it was
   not captured, revoke it and create another.
 - Each key is bound to a single app. Using it for another app returns 403.
@@ -111,8 +112,10 @@ Work outward from the feed, in this order:
 
 ## Rollback
 
-Repoint the channel at an older version rather than deleting the new one —
-`PATCH /api/admin/apps/{appId}/channels/{channelId}` with `{"currentVersionId": <id>}`.
-The switch is atomic; clients see either the whole old release or the whole new one.
+Repoint the channel at an older **released** version rather than deleting the new one —
+`PATCH /api/v1/apps/{appSlug}/channels/{channel}` with `{"currentVersion": "1.4.2"}`
+(session cookie or the app's API key). A draft promoted this way gets `releasedAt`
+in the same transaction. The switch is atomic; clients see either the whole old
+release or the whole new one.
 
 Deleting a version, channel, or app also deletes the objects it owns from S3 and cannot be undone.

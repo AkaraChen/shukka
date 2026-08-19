@@ -6,7 +6,7 @@
 
 ## Decision
 
-- 仓库根放 `action.yml`（composite action）：inputs 为 `server-url`、`api-key`、`app`、`channel`、`version`、`directory`（electron-builder 输出目录）。
+- 仓库根放 `action.yml`（composite action）：inputs 为 `server-url`、`api-key`、`app`、`channel`、`version`、`directory`（electron-builder 输出目录）、`release`（默认 false）。
 - 核心逻辑是仓库内零依赖 Node 脚本 `scripts/shukka-upload.mjs`（只用 Node 内置 fetch/fs），composite step 用 `node $GITHUB_ACTION_PATH/scripts/shukka-upload.mjs` 调用；同一脚本可脱离 action 在任意 CI 使用。
 - CI workflow 跑 actionlint；本地用 act + 示例 workflow 验证 action 端到端。
 

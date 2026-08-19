@@ -9,7 +9,7 @@ electron-updater（generic provider）按 feed base URL 请求 `{channel}.yml` /
 1. Feed 走 Shukka 无鉴权 endpoint：`/api/update/{appSlug}/{channel}` 为 base。Shukka 在链路上才能做下载计数和「channel 当前版本」原子切换。
 2. yml 内容透传：electron-builder 产出的 `latest*.yml`（或自定义 channel 命名）原样存 S3、原样返回，Shukka 只解析不改写。兼容性以 electron-builder 为准，不追实现细节。
 3. 制品请求返回 302 到 S3 presigned GET URL；Shukka 不中转字节。
-4. yml 请求按「channel 当前版本」解析；制品文件名在 channel 内全局查找（文件名含版本号，天然唯一），避免版本切换瞬间 yml 与制品不一致。
+4. yml 请求按「channel 当前版本」解析；制品文件名在 channel 内**已发布**版本中查找（文件名含版本号，天然唯一），避免版本切换瞬间 yml 与制品不一致，同时不泄露 draft。
 5. 每次 yml 命中与制品 302 各计一次数，落到版本维度。
 
 ## Alternatives

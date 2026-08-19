@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_ROLE, ROLE_COOKIE, canCreateApp, canEditReleaseNotes, canSeeTrafficStats, getRoleCookie, resolveRole } from '~/lib/role.ts'
+import { DEFAULT_ROLE, ROLE_COOKIE, canCreateApp, canEditReleaseNotes, canPromote, canSeeTrafficStats, getRoleCookie, resolveRole } from '~/lib/role.ts'
 
 const requestWithCookie = (cookie: string) => new Request('https://shukka.test/apps', { headers: { cookie } })
 
@@ -35,6 +35,14 @@ describe('canEditReleaseNotes', () => {
     expect(canEditReleaseNotes('developer')).toBe(false)
     expect(canEditReleaseNotes('content')).toBe(true)
     expect(canEditReleaseNotes('admin')).toBe(true)
+  })
+})
+
+describe('canPromote', () => {
+  it('hides promote from content only', () => {
+    expect(canPromote('content')).toBe(false)
+    expect(canPromote('developer')).toBe(true)
+    expect(canPromote('admin')).toBe(true)
   })
 })
 

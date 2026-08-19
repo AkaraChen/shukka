@@ -7,23 +7,37 @@ import { appKeys } from './keys.ts'
 
 export const noteKeys = {
   all: () => ['release-notes'] as const,
-  version: (appId: number, versionId: number) => [...noteKeys.all(), 'version', appId, versionId] as const,
+  version: (slug: string, channel: string, version: string) =>
+    [...noteKeys.all(), 'version', slug, channel, version] as const,
 }
 
-export type NotesConfigVariables = { appId: number } & NotesConfig
-export type UpsertNoteVariables = { versionId: number; locale: string; markdown: string }
-export type DeleteNoteVariables = { versionId: number; locale: string }
+export type NotesConfigVariables = { slug: string } & NotesConfig
+export type UpsertNoteVariables = { channel: string; version: string; locale: string; markdown: string }
+export type DeleteNoteVariables = { channel: string; version: string; locale: string }
 
 type MutationParams<TData, TVariables> = {
   queryClient: QueryClient
   onSuccess?: (data: TData, variables: TVariables) => void
 }
 
-/** The notes dialog's read model; fetched lazily when the dialog opens. */
-export function versionNotesQueryOptions({ appId, versionId }: { appId: number; versionId: number }) {
+function notesPath(slug: string, channel: string, version: string, locale?: string) {
+  const base = `/api/v1/apps/${encodeURIComponent(slug)}/channels/${encodeURIComponent(channel)}/versions/${encodeURIComponent(version)}/notes`
+  return locale ? `${base}/${encodeURIComponent(locale)}` : base
+}
+
+/** The notes page's read model; fetched when the editor opens. */
+export function versionNotesQueryOptions({
+  slug,
+  channel,
+  version,
+}: {
+  slug: string
+  channel: string
+  version: string
+}) {
   return queryOptions({
-    queryKey: noteKeys.version(appId, versionId),
-    queryFn: () => apiGet<{ notes: NoteContent[] }>(`/api/admin/apps/${appId}/versions/${versionId}/notes`).then((data) => data.notes),
+    queryKey: noteKeys.version(slug, channel, version),
+    queryFn: () => apiGet<{ notes: NoteContent[] }>(notesPath(slug, channel, version)).then((data) => data.notes),
     staleTime: 30_000,
   })
 }
@@ -34,43 +48,40 @@ export function updateNotesConfigMutationOptions({
   onSuccess,
 }: MutationParams<{ releaseLog: NotesConfig }, NotesConfigVariables>) {
   return mutationOptions({
-    mutationFn: ({ appId, ...values }: NotesConfigVariables) =>
-      api.put<{ releaseLog: NotesConfig }>(`/api/admin/apps/${appId}/notes-config`, values),
+    mutationFn: ({ slug, ...values }: NotesConfigVariables) =>
+      api.put<{ releaseLog: NotesConfig }>(`/api/v1/apps/${encodeURIComponent(slug)}/notes-config`, values),
     onSuccess: async (data, variables) => {
-      await queryClient.invalidateQueries({ queryKey: appKeys.detail(variables.appId) })
+      await queryClient.invalidateQueries({ queryKey: appKeys.detail(variables.slug) })
       onSuccess?.(data, variables)
     },
   })
 }
 
 export function upsertNoteMutationOptions({
-  appId,
+  slug,
   queryClient,
   onSuccess,
-}: MutationParams<{ note: NoteContent }, UpsertNoteVariables> & { appId: number }) {
+}: MutationParams<{ note: NoteContent }, UpsertNoteVariables> & { slug: string }) {
   return mutationOptions({
-    mutationFn: ({ versionId, locale, markdown }: UpsertNoteVariables) =>
-      api.put<{ note: NoteContent }>(
-        `/api/admin/apps/${appId}/versions/${versionId}/notes/${encodeURIComponent(locale)}`,
-        { markdown },
-      ),
+    mutationFn: ({ channel, version, locale, markdown }: UpsertNoteVariables) =>
+      api.put<{ note: NoteContent }>(notesPath(slug, channel, version, locale), { markdown }),
     onSuccess: async (data, variables) => {
-      await queryClient.invalidateQueries({ queryKey: noteKeys.version(appId, variables.versionId) })
+      await queryClient.invalidateQueries({ queryKey: noteKeys.version(slug, variables.channel, variables.version) })
       onSuccess?.(data, variables)
     },
   })
 }
 
 export function deleteNoteMutationOptions({
-  appId,
+  slug,
   queryClient,
   onSuccess,
-}: MutationParams<unknown, DeleteNoteVariables> & { appId: number }) {
+}: MutationParams<unknown, DeleteNoteVariables> & { slug: string }) {
   return mutationOptions({
-    mutationFn: ({ versionId, locale }: DeleteNoteVariables) =>
-      api.delete(`/api/admin/apps/${appId}/versions/${versionId}/notes/${encodeURIComponent(locale)}`),
+    mutationFn: ({ channel, version, locale }: DeleteNoteVariables) =>
+      api.delete(notesPath(slug, channel, version, locale)),
     onSuccess: async (data, variables) => {
-      await queryClient.invalidateQueries({ queryKey: noteKeys.version(appId, variables.versionId) })
+      await queryClient.invalidateQueries({ queryKey: noteKeys.version(slug, variables.channel, variables.version) })
       onSuccess?.(data, variables)
     },
   })

@@ -66,6 +66,7 @@ jobs:
           app: demo-app
           channel: stable
           directory: out
+          release: true
 
       - name: Verify the update feed serves the new version
         run: |

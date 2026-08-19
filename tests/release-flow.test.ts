@@ -57,7 +57,7 @@ async function publish(app: Awaited<ReturnType<typeof createApp>>, channel: stri
   for (const file of init.files) {
     objects.set(file.key, file.filename === 'latest.yml' ? metadataFor(version, installer) : 'binary')
   }
-  return { init, result: await finalizeUpload(app, init.uploadId), installer }
+  return { init, result: await finalizeUpload(app, init.uploadId, { release: true }), installer }
 }
 
 describe('release flow', () => {
@@ -88,9 +88,74 @@ describe('release flow', () => {
     expect(beforeFinalize).toMatchObject({ kind: 'metadata' })
     expect((beforeFinalize as { body: string }).body).toContain('version: 1.0.0')
 
-    await finalizeUpload(app, init.uploadId)
+    await finalizeUpload(app, init.uploadId, { release: true })
     const afterFinalize = await resolveFeedRequest('acme', 'stable', 'latest.yml')
     expect((afterFinalize as { body: string }).body).toContain('version: 2.0.0')
+  })
+
+  it('finalizes as a draft by default and leaves the feed unchanged', async () => {
+    const app = await createApp(appInput)
+    await publish(app, 'stable', '1.0.0')
+
+    const init = await initUpload(app, {
+      channel: 'stable',
+      version: '2.0.0',
+      files: [{ filename: 'latest.yml' }, { filename: 'Acme-Setup-2.0.0.exe' }],
+    })
+    for (const file of init.files) {
+      objects.set(file.key, file.filename === 'latest.yml' ? metadataFor('2.0.0', 'Acme-Setup-2.0.0.exe') : 'binary')
+    }
+    await finalizeUpload(app, init.uploadId)
+
+    const feed = await resolveFeedRequest('acme', 'stable', 'latest.yml')
+    expect((feed as { body: string }).body).toContain('version: 1.0.0')
+    await expect(resolveFeedRequest('acme', 'stable', 'Acme-Setup-2.0.0.exe')).rejects.toThrow(/not found/)
+
+    const { setCurrentVersion } = await import('~/server/channels.ts')
+    setCurrentVersion(app.id, 'stable', '2.0.0')
+    const afterPromote = await resolveFeedRequest('acme', 'stable', 'latest.yml')
+    expect((afterPromote as { body: string }).body).toContain('version: 2.0.0')
+    await expect(resolveFeedRequest('acme', 'stable', 'Acme-Setup-2.0.0.exe')).resolves.toMatchObject({ kind: 'redirect' })
+  })
+
+  it('hides a draft-only channel from the feed the same as an empty one', async () => {
+    const app = await createApp(appInput)
+    const init = await initUpload(app, {
+      channel: 'stable',
+      version: '1.0.0',
+      files: [{ filename: 'latest.yml' }, { filename: 'Acme-Setup-1.0.0.exe' }],
+    })
+    for (const file of init.files) {
+      objects.set(file.key, file.filename === 'latest.yml' ? metadataFor('1.0.0', 'Acme-Setup-1.0.0.exe') : 'binary')
+    }
+    await finalizeUpload(app, init.uploadId)
+    await expect(resolveFeedRequest('acme', 'stable', 'latest.yml')).rejects.toThrow(/no published version/)
+    await expect(resolveFeedRequest('acme', 'stable', 'Acme-Setup-1.0.0.exe')).rejects.toThrow(/not found/)
+  })
+
+  it('falls back to the latest released version, skipping drafts, when current is deleted', async () => {
+    const app = await createApp(appInput)
+    const first = await publish(app, 'stable', '1.0.0')
+    const init = await initUpload(app, {
+      channel: 'stable',
+      version: '1.5.0',
+      files: [{ filename: 'latest.yml' }, { filename: 'Acme-Setup-1.5.0.exe' }],
+    })
+    for (const file of init.files) {
+      objects.set(file.key, file.filename === 'latest.yml' ? metadataFor('1.5.0', 'Acme-Setup-1.5.0.exe') : 'binary')
+    }
+    const draft = await finalizeUpload(app, init.uploadId)
+    const live = await publish(app, 'stable', '2.0.0')
+
+    await deleteVersion(app, live.result.versionId)
+    expect(getChannel(app.id, 'stable').currentVersionId).toBe(first.result.versionId)
+    expect(db.select().from(versions).where(eq(versions.id, draft.versionId)).get()?.releasedAt).toBeNull()
+  })
+
+  it('rejects a channel name that is not a URL token', async () => {
+    const app = await createApp(appInput)
+    expect(() => createChannel(app.id, 'beta.1')).toThrow(/dash or underscore/)
+    expect(() => createChannel(app.id, 'Beta')).toThrow(/dash or underscore/)
   })
 
   it('serves metadata verbatim and redirects artifacts', async () => {

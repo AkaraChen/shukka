@@ -9,7 +9,7 @@ Shukka 是一个自托管的发版管理器：面板管理 app / channel / 版�
 ## Users
 
 - **管理员**（唯一面板用户）：部署 Shukka 的开发者本人，创建 app、配 S3、建 channel、发 key、看版本与下载数据。
-- **CI（API key 持有方）**：GitHub Actions 等自动化流程，只能向绑定的 app 上传版本。
+- **CI（API key 持有方）**：GitHub Actions 等自动化流程，向绑定的 app 上传版本，并可经 App API 操作该 app 内资源（见 `docs/prd/app-api.md`）。
 - **终端应用（匿名）**：安装了 electron-updater 的桌面应用，无凭证读取更新 feed 并下载制品。
 
 ## Goals
@@ -17,7 +17,7 @@ Shukka 是一个自托管的发版管理器：面板管理 app / channel / 版�
 1. 面板创建 app，每个 app 独立配置 S3（endpoint、region、bucket、prefix、access key/secret，支持 AWS/R2/MinIO 等兼容实现）。
 2. app 下自由命名的 channel（创建 app 时默认创建 `stable`），版本直接发布到某个 channel。
 3. 每个 API key 绑定单个 app；明文仅创建时展示一次；可吊销。
-4. 版本上传走 presigned URL 直传 S3：init（鉴权、领 presigned PUT）→ 直传 → finalize（校验、解析 yml、落版本记录、切换 channel 当前版本）。
+4. 版本上传走 presigned URL 直传 S3：init（鉴权、领 presigned PUT）→ 直传 → finalize（校验、解析 yml、落版本记录）。默认 draft，不切 current；`release: true` 才原子切换当前版本。事后 promote 见 `docs/prd/draft-releases.md`。
 5. 透传 electron-builder 产物：制品 + `latest*.yml` + `*.blockmap` 原样上传，Shukka 解析 yml 建记录，不自行生成更新元数据；mac/win/linux 多平台由产物天然覆盖。
 6. 无鉴权更新 endpoint：每个 app+channel 一个 feed base URL，yml 由 Shukka 返回（当前版本），制品 302 到 S3；与 electron-updater generic provider 完全兼容。
 7. 面板提供每个 channel 的 feed URL 和可复制的 electron-builder `publish` / electron-updater 配置片段。
@@ -46,8 +46,8 @@ Shukka 是一个自托管的发版管理器：面板管理 app / channel / 版�
 
 1. `POST /api/v1/upload/init`，Bearer API key，携带 channel、version、文件清单（名称/大小）→ 得到每个文件的 presigned PUT URL。目标 channel 不存在时默认拒绝，除非显式传 `createChannel: true`。
 2. 逐个 PUT 直传 S3。
-3. `POST /api/v1/upload/finalize` → Shukka 校验对象存在、解析 yml、创建版本记录并把 channel 当前版本指向它。
-4. 任一步失败返回类型化错误；finalize 前的半成品上传不影响 channel 当前版本。
+3. `POST /api/v1/upload/finalize` → Shukka 校验对象存在、解析 yml、创建版本记录。默认不切 current；带 `release: true` 才把 channel 当前版本指向它。
+4. 任一步失败返回类型化错误；finalize 前的半成品上传、以及成功的 draft，都不影响 channel 当前版本。
 
 ### 终端应用：检查更新
 
@@ -63,7 +63,7 @@ Shukka 是一个自托管的发版管理器：面板管理 app / channel / 版�
 - [x] 用 A app 的 key 向 B app 上传返回 403。
 - [ ] 完整上传一个 electron-builder mac+win 产物目录后，electron-updater（generic provider）能在两平台检查到新版本并成功下载安装。
       （feed 布局与 302 下载已用真实 MinIO 验证；真机双平台安装待接入实际应用时确认。）
-- [x] finalize 之前 channel 的 feed 始终返回旧版本；finalize 成功后返回新版本。
+- [x] finalize 之前 channel 的 feed 始终返回旧版本；仅 `release: true` 的 finalize 或事后 promote 之后返回新版本（见 `docs/prd/draft-releases.md`）。
 - [x] 同一 channel 重复上传同一 version 被拒绝（除非先在面板删除该版本）。
 - [x] 面板 app 列表、channel 列表、版本列表、下载计数、feed URL、配置片段均可见；UI 为 shadcn sidebar 应用壳。
 - [x] `action.yml` 通过 actionlint；act 本地跑通示例 workflow 完成一次真实上传（对本地 MinIO + 本地 Shukka）。

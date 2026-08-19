@@ -1,15 +1,15 @@
-import { and, desc, eq } from 'drizzle-orm'
+import { and, desc, eq, isNotNull } from 'drizzle-orm'
 import { db } from '~/db/index.ts'
 import { artifacts, channels, versions } from '~/db/schema.ts'
 import { ShukkaError } from '~/lib/errors.ts'
 import { deleteObjects, settingsFromApp } from '~/lib/storage.ts'
-import type { App, Channel } from '~/db/schema.ts'
+import type { App, Channel, Version } from '~/db/schema.ts'
 
-const CHANNEL_PATTERN = /^[a-z0-9][a-z0-9._-]{0,62}$/
+const CHANNEL_PATTERN = /^[a-z0-9][a-z0-9_-]{0,62}$/
 
 export function assertChannelName(name: string): void {
   if (!CHANNEL_PATTERN.test(name)) {
-    throw new ShukkaError('invalid_request', 'Channel name must be lowercase letters, digits, dot, dash or underscore')
+    throw new ShukkaError('invalid_request', 'Channel name must be lowercase letters, digits, dash or underscore')
   }
 }
 
@@ -41,12 +41,6 @@ export function createChannel(appId: number, name: string): Channel {
 
 /** Removes the channel, its version records, and every object those versions own. */
 export async function deleteChannel(app: App, channelId: number): Promise<void> {
-  const channel = db
-    .select()
-    .from(channels)
-    .where(and(eq(channels.id, channelId), eq(channels.appId, app.id)))
-    .get()
-  if (!channel) throw new ShukkaError('not_found', 'Channel not found')
 
   const keys = db
     .select({ s3Key: artifacts.s3Key })
@@ -60,32 +54,57 @@ export async function deleteChannel(app: App, channelId: number): Promise<void> 
   db.delete(channels).where(eq(channels.id, channelId)).run()
 }
 
+export async function deleteChannelByName(app: App, name: string): Promise<void> {
+  await deleteChannel(app, getChannel(app.id, name).id)
+}
+
 export function listVersions(channelId: number) {
   return db
     .select()
     .from(versions)
     .where(eq(versions.channelId, channelId))
+    .orderBy(desc(versions.createdAt), desc(versions.id))
+    .all()
+}
+
+/** Published versions only, newest `releasedAt` first — public notes and feed fallbacks. */
+export function listPublishedVersions(channelId: number) {
+  return db
+    .select()
+    .from(versions)
+    .where(and(eq(versions.channelId, channelId), isNotNull(versions.releasedAt)))
     .orderBy(desc(versions.releasedAt), desc(versions.id))
     .all()
 }
 
-/** Repoints the channel at an existing version; the feed switches atomically. */
-export function setCurrentVersion(appId: number, channelId: number, versionId: number | null): void {
-  const channel = db
+export function getVersion(appId: number, channelName: string, version: string): Version {
+  const channel = getChannel(appId, channelName)
+  const row = db
     .select()
-    .from(channels)
-    .where(and(eq(channels.id, channelId), eq(channels.appId, appId)))
+    .from(versions)
+    .where(and(eq(versions.channelId, channel.id), eq(versions.version, version)))
     .get()
-  if (!channel) throw new ShukkaError('not_found', 'Channel not found')
+  if (!row) throw new ShukkaError('not_found', `Version "${version}" not found`)
+  return row
+}
 
-  if (versionId !== null) {
-    const version = db
-      .select()
-      .from(versions)
-      .where(and(eq(versions.id, versionId), eq(versions.channelId, channelId)))
-      .get()
-    if (!version) throw new ShukkaError('not_found', 'Version does not belong to this channel')
+/**
+ * Points the channel at a version string (or clears current). A draft is
+ * released in the same transaction: `releasedAt` is written, then the pointer.
+ */
+export function setCurrentVersion(appId: number, channelName: string, version: string | null): void {
+  const channel = getChannel(appId, channelName)
+  if (version === null) {
+    db.update(channels).set({ currentVersionId: null }).where(eq(channels.id, channel.id)).run()
+    return
   }
 
-  db.update(channels).set({ currentVersionId: versionId }).where(eq(channels.id, channelId)).run()
+  const row = getVersion(appId, channelName, version)
+  const now = Math.floor(Date.now() / 1000)
+  db.transaction((tx) => {
+    if (row.releasedAt == null) {
+      tx.update(versions).set({ releasedAt: now }).where(eq(versions.id, row.id)).run()
+    }
+    tx.update(channels).set({ currentVersionId: row.id }).where(eq(channels.id, channel.id)).run()
+  })
 }

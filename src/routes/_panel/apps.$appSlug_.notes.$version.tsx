@@ -19,14 +19,18 @@ import { translateError, useFormatters, useT } from '~/lib/i18n/index.ts'
 
 const NotesEditor = lazy(() => import('~/features/apps/notes-editor.tsx').then((m) => ({ default: m.NotesEditor })))
 
-export const Route = createFileRoute('/_panel/apps/$appId_/notes/$versionId')({
-  loader: async ({ context, params }) => {
-    const appId = Number(params.appId)
-    const versionId = Number(params.versionId)
-    const detail = await primeAppDetailQuery(context.queryClient, appId)
-    const notes = await context.queryClient
-      .ensureQueryData(versionNotesQueryOptions({ appId, versionId }))
-      .catch(() => undefined)
+export const Route = createFileRoute('/_panel/apps/$appSlug_/notes/$version')({
+  validateSearch: (search: Record<string, unknown>) => ({
+    channel: typeof search.channel === 'string' ? search.channel : '',
+  }),
+  loader: async ({ context, params, location }) => {
+    const channel = new URLSearchParams(location.search).get('channel') ?? ''
+    const detail = await primeAppDetailQuery(context.queryClient, params.appSlug)
+    const notes = channel
+      ? await context.queryClient
+          .ensureQueryData(versionNotesQueryOptions({ slug: params.appSlug, channel, version: params.version }))
+          .catch(() => undefined)
+      : undefined
     return { detail, notes }
   },
   component: VersionNotesPage,
@@ -42,14 +46,14 @@ export const Route = createFileRoute('/_panel/apps/$appId_/notes/$versionId')({
  * that explicitly.
  */
 function VersionNotesPage() {
-  const { appId, versionId } = Route.useParams()
-  const id = Number(appId)
-  const vid = Number(versionId)
+  const { appSlug, version: versionString } = Route.useParams()
+  const { channel } = Route.useSearch()
   const { detail: initialDetail, notes: initialNotes } = Route.useLoaderData()
-  const { data } = useQuery({ ...appDetailQueryOptions({ appId: id }), initialData: initialDetail })
+  const { data } = useQuery({ ...appDetailQueryOptions({ slug: appSlug }), initialData: initialDetail })
   const { data: notes } = useQuery({
-    ...versionNotesQueryOptions({ appId: id, versionId: vid }),
+    ...versionNotesQueryOptions({ slug: appSlug, channel, version: versionString }),
     initialData: initialNotes,
+    enabled: Boolean(channel),
   })
   const t = useT()
   const format = useFormatters()
@@ -58,12 +62,15 @@ function VersionNotesPage() {
   const [drafts, setDrafts] = useState<Record<string, string>>({})
   const [error, setError] = useState<string | null>(null)
 
-  const upsertNote = useMutation(upsertNoteMutationOptions({ appId: id, queryClient }))
-  const deleteNote = useMutation(deleteNoteMutationOptions({ appId: id, queryClient }))
+  const upsertNote = useMutation(upsertNoteMutationOptions({ slug: appSlug, queryClient }))
+  const deleteNote = useMutation(deleteNoteMutationOptions({ slug: appSlug, queryClient }))
 
-  const version = data?.channels.flatMap((channel) => channel.versions).find((entry) => entry.id === vid)
+  const version = data?.channels
+    .filter((entry) => !channel || entry.name === channel)
+    .flatMap((entry) => entry.versions)
+    .find((entry) => entry.version === versionString)
 
-  if (!data || !version) {
+  if (!data || !version || !channel) {
     return (
       <div className="rounded-2xl bg-card px-6 py-10">
         <h2 className="text-lg">{t.releaseLog.versionMissing}</h2>
@@ -77,7 +84,7 @@ function VersionNotesPage() {
         <FileText className="size-5 text-foreground/30" />
         <p className="text-sm text-muted-foreground">{t.releaseLog.notEnabled}</p>
         <Button variant="outline" size="sm" asChild>
-          <Link to="/apps/$appId" params={{ appId }} search={{ tab: 'settings', section: 'release-log' }}>
+          <Link to="/apps/$appSlug" params={{ appSlug }} search={{ tab: 'settings', section: 'release-log' }}>
             {t.releaseLog.openSettings}
           </Link>
         </Button>
@@ -85,7 +92,6 @@ function VersionNotesPage() {
     )
   }
 
-  // Configured locales first, then any locale that already carries a note.
   const configured = data.app.releaseLogLocales
   const extras = (notes ?? []).map((note) => note.locale).filter((tag) => !configured.includes(tag))
   const locales = [...configured, ...extras]
@@ -110,7 +116,7 @@ function VersionNotesPage() {
   async function save() {
     setError(null)
     try {
-      await upsertNote.mutateAsync({ versionId: vid, locale, markdown })
+      await upsertNote.mutateAsync({ channel, version: versionString, locale, markdown })
       setDrafts((prev) => {
         const next = { ...prev }
         delete next[locale]
@@ -125,7 +131,7 @@ function VersionNotesPage() {
   async function remove() {
     setError(null)
     try {
-      await deleteNote.mutateAsync({ versionId: vid, locale })
+      await deleteNote.mutateAsync({ channel, version: versionString, locale })
       setDrafts((prev) => {
         const next = { ...prev }
         delete next[locale]
@@ -141,7 +147,7 @@ function VersionNotesPage() {
       <PageHeader
         title={t.releaseLog.notesTitle(version.version)}
         back={
-          <Link to="/apps/$appId" params={{ appId }} className="transition-colors hover:text-foreground">
+          <Link to="/apps/$appSlug" params={{ appSlug }} className="transition-colors hover:text-foreground">
             {data.app.name}
           </Link>
         }
