@@ -70,3 +70,12 @@ Layout:
 `CLAUDE.md` is a symlink to this file — edit `AGENTS.md`.
 
 This harness was installed by `hnm init`.
+
+## Cursor Cloud specific instructions
+
+Dependencies are installed by the environment update script (`npm install`). Standard scripts live in the `# Commands` table above and in `README.md`; the notes below are only the non-obvious gotchas.
+
+- `npm ci` fails: the committed `package-lock.json` is slightly out of sync with `package.json`, so use `npm install` (this is what the update script runs). CI's `npm ci` step is affected by the same drift.
+- `npm run typecheck` needs the generated `src/routeTree.gen.ts`. It is produced by a build or a dev run, so run `npm run build` (or start `npm run dev`) at least once before `tsc -b`.
+- `npm run dev` serves the panel + API on `:3000`. On a fresh database the root redirects to `/setup` to set the admin password before login.
+- Creating an app end-to-end requires a reachable S3-compatible endpoint — the creation wizard validates bucket connectivity ("Verifying bucket…") and blocks with "Could not reach storage" otherwise. For local manual testing, run a standalone MinIO server (the same backend the action E2E workflow uses), create a bucket, and in the wizard choose S3-compatible with **Force path-style addressing** enabled (required for MinIO).
