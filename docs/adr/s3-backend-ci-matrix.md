@@ -22,3 +22,4 @@
 - JuiceFS job 首次要拉 `juicedata/mount:ce-v1.4.1`；镜像或 `juicefs gateway` 标志变更会红——这是要的。
 - 两个后端共用默认凭证与 `releases` bucket 名，和本地 `npm run juicefs` / MinIO 开发约定一致。
 - Windows 路径不证明 JuiceFS；Linux matrix 才是 JuiceFS 的契约测试。
+- `verify-feed.mjs` 每步 30s 超时。JuiceFS 上曾出现 feed GetObject 无限挂起（SDK 默认 checksum，见 `docs/adr/per-app-s3-and-secrets.md`）；超时把「挂死」变成可诊断的失败，而不是占满 runner。

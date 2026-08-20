@@ -38,6 +38,11 @@ function client(s3: S3Settings): S3Client {
     endpoint: s3.endpoint ?? undefined,
     forcePathStyle: s3.forcePathStyle,
     credentials: { accessKeyId: s3.accessKeyId, secretAccessKey: s3.secretAccessKey },
+    // SDK v3.729+ defaults to CRC32 on every Put/Get. Compatible gateways
+    // (JuiceFS, some MinIO builds) never send the checksum trailer, so
+    // GetObject's ChecksumStream waits forever for end (aws-sdk-js-v3#8098).
+    requestChecksumCalculation: 'WHEN_REQUIRED',
+    responseChecksumValidation: 'WHEN_REQUIRED',
   })
 }
 
