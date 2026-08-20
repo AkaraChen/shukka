@@ -25,6 +25,7 @@ Out of scope until explicitly specified: anything not yet accepted in a PRD.
 - **View role**: 面板视图角色（admin / developer / content）；per-browser 存于 cookie，仅控制面板 UI 入口可见性，纯前端，无鉴权语义。
 - **Feature 质问**: the mandatory product-then-technical clarification loop driven by `$feature-dev` before implementation.
 - **PRD / ADR / Spec**: see documentation harness below.
+- **Runtime image**: GHCR 上的可部署镜像 `ghcr.io/{owner}/{repo}`（规范仓库为 `ghcr.io/shukka-app/shukka`），由 semver git 标签发布，与面向桌面应用的 GitHub composite action 不是同一条发布面。
 
 ## Observable contracts
 
@@ -89,6 +90,12 @@ Out of scope until explicitly specified: anything not yet accepted in a PRD.
 - `action.yml` 与仓库 workflow 必须通过 actionlint。
 - Feed e2e：在真实 MinIO + 已发布版本上，用 Electron library 拉起 `electron-updater`（generic provider）做 check + download + sha512；另用真实 Tauri 进程拉起 `tauri-plugin-updater` 做 check + download + minisign。两者都不测安装。见 `docs/adr/electron-updater-e2e.md`、`docs/adr/tauri-updater-e2e.md`。
 
+### Runtime image
+
+- 推送 git 标签 `vMAJOR.MINOR.PATCH`（可带预发布后缀）会把仓库根 `Dockerfile` 构建的镜像发布到 `ghcr.io/{owner}/{repo}`。PR 不发镜像；`main` 继续发 `latest` 与 `sha-*`。
+- 正式版镜像 tag：`{version}`、`{major}.{minor}`、major ≥ 1 时的 `{major}`，以及 `latest`。预发布只发布 `{version}`（含后缀），不移动 `latest` 或 major/minor 浮动 tag。major 为 0 时不发布 `:0`。
+- 公开仓库的镜像可匿名拉取。构建失败不推送。见 `docs/prd/container-image.md`、`docs/adr/ghcr-on-semver-tag.md`。
+
 ## System-wide invariants
 
 - 一个 version 恰属于一个 channel；同 channel 内 version 字符串唯一（draft 与 released 共用此唯一性）。
@@ -136,3 +143,5 @@ Out of scope until explicitly specified: anything not yet accepted in a PRD.
 - Updater adapters: App `updaterKind` (`electron` | `tauri`) per `docs/prd/updater-adapters.md`
   and `docs/adr/updater-kind-on-app.md`; Tauri process check/download per
   `docs/adr/tauri-updater-e2e.md`.
+- Runtime image published to GHCR on `v*.*.*` tags per `docs/prd/container-image.md`
+  and `docs/adr/ghcr-on-semver-tag.md`.

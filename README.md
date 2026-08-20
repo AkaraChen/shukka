@@ -21,6 +21,9 @@ API keys for CI, and a record of every version you have shipped.
 docker run -d --name shukka -p 3000:3000 -v shukka-data:/data ghcr.io/shukka-app/shukka
 ```
 
+Pushing a `vMAJOR.MINOR.PATCH` tag publishes that image to GitHub Packages. Pin a
+version with `ghcr.io/shukka-app/shukka:0.1.0` if you do not want `latest`.
+
 Or from source:
 
 ```bash

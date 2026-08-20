@@ -45,6 +45,9 @@ Project: `shukka` — TanStack Start app (panel + API + update feed), SQLite via
 | `npm run db:generate` | Regenerate `drizzle/` migrations after editing `src/db/schema.ts` |
 | `actionlint` | Lint `action.yml` and workflows |
 
+The runtime image `ghcr.io/shukka-app/shukka` is published by
+`.github/workflows/docker.yml` on `main` and on `v*.*.*` tags.
+
 The GitHub Action is exercised end to end with `act` against a local MinIO; see the comment at the
 top of `.github/workflows/action-test.yml`. The same workflow then runs `tests/e2e/`
 (Electron library + electron-updater) against that published feed.
