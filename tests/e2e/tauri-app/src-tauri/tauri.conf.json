@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "identifier": "dev.shukka.e2e",
   "build": {
-    "frontendDist": "../dist"
+    "frontendDist": "../frontend"
   },
   "app": {
     "windows": [
