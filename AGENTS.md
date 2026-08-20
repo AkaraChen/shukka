@@ -48,9 +48,10 @@ Project: `shukka` — TanStack Start app (panel + API + update feed), SQLite via
 The runtime image `ghcr.io/shukka-app/shukka` is published by
 `.github/workflows/docker.yml` on `main` and on `v*.*.*` tags.
 
-The GitHub Action is exercised end to end with `act` against a local MinIO; see the comment at the
-top of `.github/workflows/action-test.yml`. The same workflow then runs `tests/e2e/`
-(Electron library + electron-updater) against that published feed.
+The GitHub Action is a node24 JavaScript action (`scripts/shukka-upload.mjs`); it
+does not call bash. It is exercised end to end on Ubuntu and Windows runners
+against MinIO; see `.github/workflows/action-test.yml`. The same workflow then
+runs `tests/e2e/` (Electron library + electron-updater) against that published feed.
 
 Layout:
 

@@ -25,7 +25,7 @@ Out of scope until explicitly specified: anything not yet accepted in a PRD.
 - **View role**: 面板视图角色（admin / developer / content）；per-browser 存于 cookie，仅控制面板 UI 入口可见性，纯前端，无鉴权语义。
 - **Feature 质问**: the mandatory product-then-technical clarification loop driven by `$feature-dev` before implementation.
 - **PRD / ADR / Spec**: see documentation harness below.
-- **Runtime image**: GHCR 上的可部署镜像 `ghcr.io/{owner}/{repo}`（规范仓库为 `ghcr.io/shukka-app/shukka`），由 semver git 标签发布，与面向桌面应用的 GitHub composite action 不是同一条发布面。
+- **Runtime image**: GHCR 上的可部署镜像 `ghcr.io/{owner}/{repo}`（规范仓库为 `ghcr.io/shukka-app/shukka`），由 semver git 标签发布，与面向桌面应用的 GitHub JavaScript action 不是同一条发布面。
 
 ## Observable contracts
 
@@ -86,8 +86,9 @@ Out of scope until explicitly specified: anything not yet accepted in a PRD.
 
 ### GitHub Action
 
-- 仓库根 `action.yml` 为 composite action，inputs：`server-url`、`api-key`、`app`、`channel`、`version`、`directory`、`create-channel`、`release`（默认 false，对应 finalize 的 draft；`true` 则立即上线）；将目录内构建产物完整发布为一个版本，outputs 为 `version` 与 `channel`。`version` 留空时从目录内 yml 读取。
+- 仓库根 `action.yml` 为 JavaScript action（`using: node24`，`main: scripts/shukka-upload.mjs`），inputs：`server-url`、`api-key`、`app`、`channel`、`version`、`directory`、`create-channel`、`release`（默认 false，对应 finalize 的 draft；`true` 则立即上线）；将目录内构建产物完整发布为一个版本，outputs 为 `version` 与 `channel`。`version` 留空时从目录内 yml 读取。不调用 bash / pwsh / cmd。
 - `action.yml` 与仓库 workflow 必须通过 actionlint。
+- Action e2e 必须在 GitHub-hosted `windows-latest` 上跑通同一条发布路径（init → 直传 → finalize → feed → 宿主平台 electron-updater）。
 - Feed e2e：在真实 MinIO + 已发布版本上，用 Electron library 拉起 `electron-updater`（generic provider）做 check + download + sha512；另用真实 Tauri 进程拉起 `tauri-plugin-updater` 做 check + download + minisign。两者都不测安装。见 `docs/adr/electron-updater-e2e.md`、`docs/adr/tauri-updater-e2e.md`。
 
 ### Runtime image
@@ -136,7 +137,7 @@ Out of scope until explicitly specified: anything not yet accepted in a PRD.
 - Panel, instance-level admin API, `/api/v1` App API, upload API and update feed live in one
   TanStack Start app (`src/routes/`), with domain services in `src/server/` and infrastructure
   in `src/lib/`. Nested `/api/admin/apps/:id` routes are gone.
-- GitHub Action at repository root `action.yml` + `scripts/shukka-upload.mjs`; agent skill at
+- GitHub Action is a node24 JavaScript action at repository root `action.yml` + `scripts/shukka-upload.mjs`; agent skill at
   `.agents/skills/shukka-ops/`.
 - Verified end to end against MinIO: publish through the action, HTTP feed + 302, and a
   host-platform `electron-updater` check/download (`tests/e2e/`, `docs/adr/electron-updater-e2e.md`).

@@ -39,23 +39,11 @@ inputs:
 outputs:
   version:
     description: 'The published version'
-    value: ${{ steps.publish.outputs.version }}
   channel:
     description: 'The channel the version was published to'
-    value: ${{ steps.publish.outputs.channel }}
 
+# JavaScript action: the runner's Node executes the uploader directly.
+# No bash/pwsh/cmd, so Windows self-hosted runners with only MinGit work.
 runs:
-  using: 'composite'
-  steps:
-    - id: publish
-      shell: bash
-      env:
-        SHUKKA_SERVER_URL: ${{ inputs.server-url }}
-        SHUKKA_API_KEY: ${{ inputs.api-key }}
-        SHUKKA_APP: ${{ inputs.app }}
-        SHUKKA_CHANNEL: ${{ inputs.channel }}
-        SHUKKA_DIRECTORY: ${{ inputs.directory }}
-        SHUKKA_VERSION: ${{ inputs.version }}
-        SHUKKA_CREATE_CHANNEL: ${{ inputs.create-channel }}
-        SHUKKA_RELEASE: ${{ inputs.release }}
-      run: node "$GITHUB_ACTION_PATH/scripts/shukka-upload.mjs"
+  using: 'node24'
+  main: 'scripts/shukka-upload.mjs'
