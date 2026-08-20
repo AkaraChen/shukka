@@ -18,7 +18,7 @@ API keys for CI, and a record of every version you have shipped.
 ## Run it
 
 ```bash
-docker run -d --name shukka -p 3000:3000 -v shukka-data:/data ghcr.io/akarachen/shukka
+docker run -d --name shukka -p 3000:3000 -v shukka-data:/data ghcr.io/shukka-app/shukka
 ```
 
 Or from source:
