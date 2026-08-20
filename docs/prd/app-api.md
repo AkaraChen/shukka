@@ -18,7 +18,7 @@ API key 只能 init/finalize 上传。面板能做的设 current、建 channel�
 4. API key 能做绑定 app 内、面板能点的写/读：**改该 app 设置**、channel / version / note 的 CRUD、设 current、读详情与趋势。
 5. API key **不能**：建/列全部 app、删整个 app、改管理员密码、签发/吊销/删除 API key（key 只在面板管理）。
 6. 实例级（登录、改密、列/建 app、存储探测）仍走 session 专用路由，不进 key 的能力面。
-7. 面板 app 详情增加独立 **API docs** 标签（nuqs `tab=docs`），用 ReDoc 展示 OpenAPI；可见性与 Integration 相同（admin / developer），不公开挂到未登录路由。Integration 的 HTTP API 接入说明里提到该文档，并提供跳转到该标签的按钮。
+7. 面板 app 详情增加独立 **API docs** 入口，新浏览器标签打开 `/docs`：整页只有 ReDoc，无面板 chrome。可见性与 Integration 相同（admin / developer），不公开挂到未登录路由。Integration 的 HTTP API 接入说明里提到该文档，并提供同样打开新标签的按钮。
 
 ## Non-goals
 
@@ -37,8 +37,8 @@ API key 只能 init/finalize 上传。面板能做的设 current、建 channel�
 
 ### 开发者：对照文档
 
-1. 打开 app 详情的 API docs 标签，ReDoc 渲染当前服务器的 OpenAPI。
-2. 或从 Integration 的 HTTP API 方式点跳转按钮进入该标签。
+1. 点击 app 详情的 API docs 入口，新浏览器标签打开 `/docs`，整页 ReDoc 渲染当前服务器的 OpenAPI。
+2. 或从 Integration 的 HTTP API 方式点跳转按钮，同样打开 `/docs`。
 3. 文档标明哪些操作接受 API key、哪些仅 session。
 
 ## Acceptance criteria
@@ -48,13 +48,13 @@ API key 只能 init/finalize 上传。面板能做的设 current、建 channel�
 - [x] 用 key 调删 app、管 key、列/建其它 app、改密 → 401/403。
 - [x] 路径与面板深链只用 slug / channel 名 / version 字符串。
 - [x] 非法 channel 名（含大写、空格、`.` 等）创建失败。
-- [x] app 详情有独立 API docs 标签（`?tab=docs`）渲染 ReDoc；content 不可见该标签；未登录被挡在面板认证之后。
-- [x] Integration 的 HTTP API 接入方式含指向该标签的跳转按钮。
+- [x] app 详情有独立 API docs 入口，点击在新浏览器标签打开 `/docs`（整页 ReDoc，无面板 chrome）；content 不可见该入口；未登录被挡在会话认证之后。
+- [x] Integration 的 HTTP API 接入方式含指向 `/docs` 的跳转按钮，同样在新标签打开。
 
 ## Resolved product decisions
 
 - Key 范围只在绑定 app 内，最多改设置 + CRUD 内部实体。
 - Key 生命周期只留面板。
-- ReDoc 只在面板内，独立标签，不嵌进 Integration。
+- ReDoc 在独立的 `/docs` 页（整页、无面板 chrome），不嵌进 Integration，也不再作为 app 详情标签。
 - 程序化 API 与面板 admin 调用合并为一棵 apps 树，分叉主要是鉴权。
 - 不上 UUID。

@@ -4,10 +4,10 @@ import { apiGet } from './requests/apps.ts'
 import { useT } from '~/lib/i18n/index.ts'
 
 /**
- * ReDoc for the current server's OpenAPI. The spec is session-gated; this
- * panel only mounts behind the same panel auth as Integration.
+ * Full-viewport ReDoc for `/docs`. The spec is session-gated; the route
+ * mounts this only after the same auth check as the panel.
  */
-export function ApiDocsPanel() {
+export function ApiDocsPage() {
   const t = useT()
   const [spec, setSpec] = useState<object | null>(null)
   const [error, setError] = useState(false)
@@ -26,8 +26,10 @@ export function ApiDocsPanel() {
     }
   }, [])
 
-  if (error) return <p className="text-sm text-muted-foreground">{t.apps.detail.apiDocsError}</p>
-  if (!spec) return <Skeleton className="h-[32rem] rounded-xl" />
+  if (error) {
+    return <p className="p-6 text-sm text-muted-foreground">{t.apps.detail.apiDocsError}</p>
+  }
+  if (!spec) return <Skeleton className="h-svh rounded-none" />
   return <RedocView spec={spec} />
 }
 
@@ -44,9 +46,9 @@ function RedocView({ spec }: { spec: object }) {
     }
   }, [])
 
-  if (!Viewer) return <Skeleton className="h-[32rem] rounded-xl" />
+  if (!Viewer) return <Skeleton className="h-svh rounded-none" />
   return (
-    <div className="redoc-panel overflow-hidden rounded-2xl bg-card">
+    <div className="min-h-svh bg-background">
       <Viewer
         spec={spec}
         options={{

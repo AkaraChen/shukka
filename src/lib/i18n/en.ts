@@ -79,7 +79,11 @@ export const en = {
       deleteTitle: 'Delete app',
       deleteDetail:
         'Removes every channel, version record, API key, and the stored objects in S3. Update feeds stop responding immediately.',
-      deleteConfirm: (name: string) => `Delete "${name}" and all its releases? This cannot be undone.`,
+      deleteConfirm: (name: string) => `Delete "${name}"?`,
+      deleteDialogDetail:
+        'This removes every channel, version record, API key, and the stored objects in S3. This cannot be undone.',
+      deleteCancel: 'Cancel',
+      deleteDialogConfirm: 'Delete app',
       deleteButton: 'Delete this app',
       deleteChannelTitle: 'Delete channel',
       deleteChannelDetail:
@@ -257,7 +261,7 @@ export const en = {
       'One workflow step publishes the output directory. Create an API key in the API keys tab and store it as a repository secret first.',
     httpApiTitle: 'HTTP API',
     httpApiDetail:
-      'Any CI or script can publish over HTTP: init the upload, PUT each file straight to S3 with the presigned URLs, then finalize (draft by default). The API key goes in the Authorization header. Full request shapes live in the API docs tab.',
+      'Any CI or script can publish over HTTP: init the upload, PUT each file straight to S3 with the presigned URLs, then finalize (draft by default). The API key goes in the Authorization header. Full request shapes live in the API docs.',
     openApiDocs: 'Open API docs',
     agentTitle: 'Using agent',
     agentDetail:

@@ -2,6 +2,7 @@ import { X } from 'lucide-react'
 import { Badge } from '~/components/ui/badge'
 import { Label } from '~/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '~/components/ui/select'
+import { Switch } from '~/components/ui/switch'
 import { useFormatters, useT } from '~/lib/i18n/index.ts'
 import { DEFAULT_FALLBACK_LOCALE, type NotesConfig } from '~/lib/release-log.ts'
 import { LocaleCombobox } from './locale-combobox.tsx'
@@ -45,16 +46,13 @@ export function ReleaseLogConfigFields({
 
   return (
     <div className="grid gap-5">
-      <label className="flex items-center gap-2.5 text-sm">
-        <input
-          type="checkbox"
-          checked={value.enabled}
-          onChange={(event) => setEnabled(event.target.checked)}
-          className="size-4 accent-primary"
-        />
-        {t.releaseLog.enable}
-        <span className="text-muted-foreground">{t.releaseLog.enableHint}</span>
-      </label>
+      <div className="flex items-center gap-2.5">
+        <Switch id="release-log-enabled" checked={value.enabled} onCheckedChange={setEnabled} />
+        <Label htmlFor="release-log-enabled">
+          {t.releaseLog.enable}
+          <span className="text-muted-foreground">{t.releaseLog.enableHint}</span>
+        </Label>
+      </div>
 
       {value.enabled ? (
         <>

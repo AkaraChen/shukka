@@ -74,7 +74,10 @@ export const zh = {
       dangerZone: '危险操作',
       deleteTitle: '删除应用',
       deleteDetail: '将删除所有 channel、版本记录、API key 以及 S3 中存储的对象。更新源会立即停止响应。',
-      deleteConfirm: (name) => `删除「${name}」及其所有版本？此操作不可撤销。`,
+      deleteConfirm: (name) => `删除「${name}」？`,
+      deleteDialogDetail: '将删除所有 channel、版本记录、API key 以及 S3 中存储的对象。此操作不可撤销。',
+      deleteCancel: '取消',
+      deleteDialogConfirm: '删除应用',
       deleteButton: '删除此应用',
       deleteChannelTitle: '删除 channel',
       deleteChannelDetail: '删除某个 channel、其版本记录以及 S3 中的文件。该 channel 的更新源会立即停止响应。',
@@ -242,7 +245,7 @@ export const zh = {
     githubActionDetail: '一个 workflow 步骤即可发布产物目录。先在「API key」标签页创建 key，并存为仓库 secret。',
     httpApiTitle: 'HTTP API',
     httpApiDetail:
-      '任意 CI 或脚本都可以走 HTTP 发布：init 上传事务，用 presigned URL 把每个文件直传到 S3，然后 finalize（默认草稿）。API key 放在 Authorization 头里。完整请求形状见 API 文档标签。',
+      '任意 CI 或脚本都可以走 HTTP 发布：init 上传事务，用 presigned URL 把每个文件直传到 S3，然后 finalize（默认草稿）。API key 放在 Authorization 头里。完整请求形状见 API 文档。',
     openApiDocs: '打开 API 文档',
     agentTitle: '用 Agent',
     agentDetail:

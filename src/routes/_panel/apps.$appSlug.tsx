@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { createFileRoute, useRouter } from '@tanstack/react-router'
+import { createFileRoute, Link, useRouter } from '@tanstack/react-router'
 import { BookOpen, GitBranch, KeyRound, Plug, Settings2 } from 'lucide-react'
 import { parseAsStringLiteral, useQueryState } from 'nuqs'
 import { useEffect, useState } from 'react'
@@ -16,7 +16,6 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '~/components/ui/select'
 import { Skeleton } from '~/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs'
-import { ApiDocsPanel } from '~/features/apps/api-docs-panel.tsx'
 import { ApiKeysPanel } from '~/features/apps/api-keys-panel.tsx'
 import { AppForm } from '~/features/apps/app-form.tsx'
 import { ChannelsPanel } from '~/features/apps/channels-panel.tsx'
@@ -32,11 +31,12 @@ import {
   updateAppMutationOptions,
 } from '~/features/apps/requests/apps.ts'
 import { useT } from '~/lib/i18n/index.ts'
+import { cn } from '~/lib/utils'
 import { useViewRole } from '~/lib/role-context.ts'
 import type { AppDetail, ChannelDetail, PublicApp } from '~/server/dashboard.ts'
 import { highlightSnippet } from '~/server/highlight.ts'
 
-const TAB_VALUES = ['channels', 'keys', 'integration', 'docs', 'settings'] as const
+const TAB_VALUES = ['channels', 'keys', 'integration', 'settings'] as const
 
 /** Highlight the integration snippets during SSR so the first paint is colored. */
 async function highlightIntegrationSnippets(detail: AppDetail | undefined): Promise<IntegrationSnippets | null> {
@@ -71,7 +71,7 @@ function AppDetailPage() {
   const t = useT()
   const role = useViewRole()
   const [tab, setTab] = useQueryState('tab', parseAsStringLiteral(TAB_VALUES).withDefault('channels'))
-  const actorTab = tab === 'keys' || tab === 'integration' || tab === 'docs'
+  const actorTab = tab === 'keys' || tab === 'integration'
   const activeTab = tab === 'channels' || tab === 'settings' || (role !== 'content' && actorTab) ? tab : 'channels'
 
   if (isPending) return <Skeleton className="h-64 rounded-xl" />
@@ -102,9 +102,16 @@ function AppDetailPage() {
                 <TabsTrigger value="integration" className="flex-none px-0">
                   <Plug /> {t.apps.detail.integration}
                 </TabsTrigger>
-                <TabsTrigger value="docs" className="flex-none px-0">
+                <Link
+                  to="/docs"
+                  target="_blank"
+                  rel="noreferrer"
+                  className={cn(
+                    'relative inline-flex h-[calc(100%-1px)] flex-none items-center justify-center gap-1.5 rounded-md border border-transparent px-0 py-1 text-sm font-medium whitespace-nowrap text-foreground/60 transition-all hover:text-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-1 focus-visible:outline-ring dark:text-muted-foreground dark:hover:text-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*=\'size-\'])]:size-4',
+                  )}
+                >
                   <BookOpen /> {t.apps.detail.apiDocs}
-                </TabsTrigger>
+                </Link>
               </>
             ) : null}
             <TabsTrigger value="settings" className="flex-none px-0">
@@ -127,9 +134,6 @@ function AppDetailPage() {
               ) : (
                 <IntegrationPanelLoader app={data.app} channels={data.channels} />
               )}
-            </TabsContent>
-            <TabsContent value="docs" className="mt-6">
-              <ApiDocsPanel />
             </TabsContent>
           </>
         ) : null}
@@ -190,6 +194,7 @@ function AppSettings({ slug, app, channels }: { slug: string; app: PublicApp; ch
     'section',
     parseAsStringLiteral(SETTINGS_SECTIONS).withDefault('general'),
   )
+  const [pendingDeleteApp, setPendingDeleteApp] = useState(false)
   const activeSection: SettingsSection =
     role === 'content' ? 'release-log' : section === 'danger' && role !== 'admin' ? 'general' : section
 
@@ -236,17 +241,38 @@ function AppSettings({ slug, app, channels }: { slug: string; app: PublicApp; ch
             <section>
               <h3 className="text-base text-destructive">{t.apps.detail.deleteTitle}</h3>
               <p className="mt-1 text-sm text-muted-foreground">{t.apps.detail.deleteDetail}</p>
-              <Button
-                variant="destructive"
-                className="mt-4"
-                onClick={async () => {
-                  if (!confirm(t.apps.detail.deleteConfirm(app.name))) return
-                  await deleteApp.mutateAsync(slug)
-                  await router.navigate({ to: '/apps' })
-                }}
-              >
+              <Button variant="destructive" className="mt-4" onClick={() => setPendingDeleteApp(true)}>
                 {t.apps.detail.deleteButton}
               </Button>
+              <Dialog
+                open={pendingDeleteApp}
+                onOpenChange={(open) => {
+                  if (!open) setPendingDeleteApp(false)
+                }}
+              >
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>{t.apps.detail.deleteConfirm(app.name)}</DialogTitle>
+                    <DialogDescription>{t.apps.detail.deleteDialogDetail}</DialogDescription>
+                  </DialogHeader>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setPendingDeleteApp(false)}>
+                      {t.apps.detail.deleteCancel}
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      disabled={deleteApp.isPending}
+                      onClick={async () => {
+                        await deleteApp.mutateAsync(slug)
+                        setPendingDeleteApp(false)
+                        await router.navigate({ to: '/apps' })
+                      }}
+                    >
+                      {t.apps.detail.deleteDialogConfirm}
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
             </section>
             <DeleteChannelSection slug={slug} channels={channels} />
           </div>
