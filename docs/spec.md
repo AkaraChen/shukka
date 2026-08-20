@@ -60,6 +60,12 @@ Out of scope until explicitly specified: anything not yet accepted in a PRD.
 - 制品字节永不经过 Shukka 进程（上传直传 S3，下载 302）。
 - 错误响应统一为 `{ error, message }`，`error` 取自固定码集：`unauthorized`、`forbidden`、`not_found`、`conflict`、`invalid_request`、`storage_error`、`metadata_error`。
 
+### Health（无鉴权）
+
+- `GET /api/health` 公开无鉴权，不依赖任何 app / channel / 登录态或 S3 配置；未初始化实例也返回 200。
+- 执行一次 SQLite 轻量查询（`SELECT 1`）作为依赖探针；成功返回 `200 { status: "ok", db: "ok" }`，SQLite 抛错返回 `503 { status: "degraded", db: "down" }`（不走业务错误信封 `{ error, message }`，不泄内部错误文本）。响应 `cache-control: no-store`。
+- 不探 S3（配置 per-app，无默认实例可探）；不在 `/api/v1/openapi.json` 公开文档中，与 session-only 管理路由同一处理。
+
 ### Panel
 
 - 除 setup/login 外的面板路由、`/docs` 与管理 API 均要求 session；未认证重定向到登录（未初始化时重定向到 setup）。
