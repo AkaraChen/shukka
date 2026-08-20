@@ -23,6 +23,7 @@ Out of scope until explicitly specified: anything not yet accepted in a PRD.
 - **Locale**: 面板 UI 语言，`en`（源语言与回退）或 `zh`；per-browser 存于 cookie。
 - **Theme preference**: 面板明暗主题偏好（light / dark）；per-browser 存于 cookie，无记录时跟随系统。
 - **View role**: 面板视图角色（admin / developer / content）；per-browser 存于 cookie，仅控制面板 UI 入口可见性，纯前端，无鉴权语义。
+- **Data directory**: 服务持久化根目录（默认 `./data`，`SHUKKA_DATA_DIR` 可改；容器内默认 `/data`），含 SQLite 文件与自动生成的 S3 加密密钥。整目录即备份边界。
 - **Feature 质问**: the mandatory product-then-technical clarification loop driven by `$feature-dev` before implementation.
 - **PRD / ADR / Spec**: see documentation harness below.
 
@@ -77,6 +78,15 @@ Out of scope until explicitly specified: anything not yet accepted in a PRD.
 - 面板 app 详情路由为 `/apps/{appSlug}`，不再使用数字 id。
 - 创建向导第一步选择 `updaterKind`（Electron / Tauri，必选、不预选）并填写名称 / slug；未手改 slug 时由名称经拼音 + GitHub Slugger 自动生成。kind 创建后不改，Settings 不展示。Integration 文案与 snippet 随 `updaterKind` 切换。
 
+### Runtime（自托管进程）
+
+- 面板、`/api/admin`、`/api/v1`、`/api/update` 同一 Node 进程、同一 HTTP 端口。默认端口 `3000`（`PORT` 或 `NITRO_PORT`）。
+- 启动时若进程 cwd 下存在 `drizzle/`，对 SQLite 自动 migrate；生产不跑 `db:generate`。
+- `GET /api/admin/session` 无需鉴权，返回 `{ initialized, authenticated }`，作为进程探活（不是独立 `/health`）。
+- 管理员密码不从环境变量读取：未初始化时面板走 setup；忘记密码的恢复路径是删除 `admin`（及 `sessions`）行后重走 setup。
+- S3 凭证按 app 存在库中，不是进程环境变量。进程环境只影响监听地址与数据目录（见 `docs/prd/deploy.md`）。
+- 同一数据目录同一时间只有一个写进程。
+
 ### GitHub Action
 
 - 仓库根 `action.yml` 为 composite action，inputs：`server-url`、`api-key`、`app`、`channel`、`version`、`directory`、`create-channel`、`release`（默认 false，对应 finalize 的 draft；`true` 则立即上线）；将目录内构建产物完整发布为一个版本，outputs 为 `version` 与 `channel`。`version` 留空时从目录内 yml 读取。
@@ -91,7 +101,8 @@ Out of scope until explicitly specified: anything not yet accepted in a PRD.
 - 版本制品一经 finalize 不可修改，只可删除（删除会清理 S3 对象；若删的是 current 则回退到剩余最新**已发布**版本，无则清空）。`releasedAt` 一旦非空不可改回空。Release note 是挂在版本上的可变元数据，draft 与 released 都可编辑，不改变版本记录本身。
 - Release note 的 `html` / `text` 是写时渲染产物（渲染器升级不回溯已存产物；`html` 经消毒，源文中的原始 HTML 被剥离）；随所属 version 删除级联清除。
 - 数据库中不存任何明文 secret（管理员密码存 hash，API key 存 hash，S3 secret 加密）。
-- 元数据在 SQLite（`data/` 目录，可用 `SHUKKA_DATA_DIR` 指定），加密密钥同目录自动生成；`data/` 目录整体即完整备份边界。
+- 元数据在 SQLite（data directory，可用 `SHUKKA_DATA_DIR` / `SHUKKA_DB_PATH` 指定），加密密钥同目录自动生成（`SHUKKA_KEY_PATH` 可改路径）；data directory 整体即完整备份边界——缺密钥则无法解密已存 S3 secret。
+- 单个 Node 进程承载全部 HTTP 面；同一 SQLite 文件不可被多个 Shukka 进程同时写。
 - S3 对象键布局固定为 `{prefix}/{channel}/{version}/{filename}`；制品文件名不含路径分隔符。
 - 删除 version、channel 或 app 都会同时删除其拥有的 S3 对象；删除 current version 还会把 channel 当前版本回退到剩余最新**已发布**版本（无剩余则清空）。
 - `version` 字符串与制品文件名都不得含路径分隔符或 `..`，保证对象键始终落在文档化的布局内。
@@ -111,6 +122,7 @@ Out of scope until explicitly specified: anything not yet accepted in a PRD.
 
 - Repository agent entrypoint is root `AGENTS.md` (`CLAUDE.md` is a symlink to it).
 - Feature development workflow skill lives at `.agents/skills/feature-dev/` (also linked from `.claude/skills/`).
+- Self-host operator guide lives at `docs/prd/deploy.md`; runtime choice at `docs/adr/self-host-runtime.md`.
 - Platform operation skill lives at `.agents/skills/shukka-ops/`; it must stay consistent with the HTTP contracts above.
 - Publish protocol skill lives at `skills/shukka-publish/` (installable via the skills CLI); it is generic — no per-server/app/channel facts — and must stay consistent with the upload API contract above.
 - Commit attempts should re-check the working tree against this specification and relevant PRDs/ADRs before landing.
@@ -130,3 +142,5 @@ Out of scope until explicitly specified: anything not yet accepted in a PRD.
 - Updater adapters: App `updaterKind` (`electron` | `tauri`) per `docs/prd/updater-adapters.md`
   and `docs/adr/updater-kind-on-app.md`; Tauri process check/download per
   `docs/adr/tauri-updater-e2e.md`.
+- Self-host deploy documented per `docs/prd/deploy.md` and `docs/adr/self-host-runtime.md`
+  (Docker + persistent data volume; no new runtime code).

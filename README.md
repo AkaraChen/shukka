@@ -33,6 +33,8 @@ Open the panel and set the admin password on first visit. Everything Shukka pers
 the SQLite database and the key that encrypts stored S3 secrets — lives in `/data`
 (`SHUKKA_DATA_DIR`, default `./data`). Back up that directory and nothing else.
 
+The image name above is `ghcr.io/akarachen/shukka`. If pull fails, `docker build -t shukka .` from the repo root and run that tag instead. Full operator guide — reverse proxy, backups, upgrades, env vars, what not to host on: [`docs/prd/deploy.md`](docs/prd/deploy.md).
+
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `PORT` | `3000` | HTTP port |
@@ -98,6 +100,7 @@ see the comment at the top of `.github/workflows/action-test.yml`.
 | Path | Contents |
 |------|----------|
 | `docs/prd/` | Product requirements |
+| `docs/prd/deploy.md` | Self-host the Shukka server |
 | `docs/adr/` | Architecture decisions and their trade-offs |
 | `docs/spec.md` | Terminology, HTTP contracts, system invariants |
 | `.agents/skills/shukka-ops/references/api.md` | Full API reference |
