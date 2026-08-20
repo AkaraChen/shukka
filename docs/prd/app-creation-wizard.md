@@ -10,7 +10,7 @@
 
 ## Goals
 
-1. `/apps/new` 改为两步向导：第一步填 app 名称与 slug；第二步先选存储提供商（provider），对应的 S3 字段直接出现在选择器下方，无第三个页面。
+1. `/apps/new` 第一步：用与存储相同的图标按钮选择更新系统（Electron / Tauri，必选、不预选），并填名称与 slug；未手改 slug 时由名称自动 slugify（拼音 + GitHub Slugger）。第二步选存储提供商，对应 S3 字段出现在选择器下方。第三步 Release log。
 2. Provider 预设把「该填什么」变成默认行为：每个 provider 只展示适用字段，隐藏字段由向导写入正确默认值。
 3. 每一步先自验再前进；最终提交的服务端错误映射回责任步骤并标出字段。
 4. 服务端契约不变：app 仍由一次 `POST /api/admin/apps` 创建，S3 写探测失败时数据库不留任何记录。
@@ -27,7 +27,7 @@
 
 ### 管理员：两步创建 app
 
-1. 第一步：填 app 名称与 slug。客户端校验通过（名称必填；slug 必填且符合 slug 格式）才能进入第二步。
+1. 第一步：选更新系统，填 app 名称与 slug。未选手动改过的 slug 随名称自动生成。客户端校验通过（kind 已选、名称必填、slug 格式正确）才能进入第二步。
 2. 第二步：选择 provider（AWS / Cloudflare R2 / MinIO / Other），该 provider 的 S3 字段直接出现在选择器下方；填完后提交。
 3. 提交即一次 `POST /api/admin/apps`；创建成功跳转到新 app 详情页（默认含 `stable` channel）。
 
@@ -46,7 +46,7 @@
 
 ## Validation & failure behavior
 
-- 每一步在允许前进前自验：第一步校验名称与 slug；第二步校验当前 provider 下显示字段的必填项。
+- 每一步在允许前进前自验：第一步校验更新系统已选、名称与 slug；第二步校验当前 provider 下显示字段的必填项。
 - 最终提交失败后，服务端错误映射回责任步骤：
   - `conflict`（slug 已被占用）与 name/slug 相关的 `invalid_request` → 回到第一步，标记对应字段。
   - S3 相关的 `invalid_request` 与 `storage_error`（凭证/连通性探测失败）→ 停留在第二步展示错误。
@@ -54,7 +54,7 @@
 
 ## Acceptance criteria
 
-- [ ] `/apps/new` 呈现两步向导：第一步只有名称与 slug；第一步校验未通过时无法进入第二步。
+- [ ] `/apps/new` 第一步同时选择更新系统（Electron / Tauri，必选、不预选）并填写名称与 slug；校验未通过时无法进入第二步。
 - [ ] 第二步选择 provider 后，S3 字段直接出现在 provider 选择器下方，无第三个页面。
 - [ ] 四个 provider 的显示字段与隐藏字段默认值与上表一致（AWS：endpoint=`null`、path-style=`false`；R2：region=`auto`、path-style=`false`；MinIO：region=`us-east-1`、path-style=`true`；Other：显示全部字段）。
 - [ ] 输入后切换 provider，共有字段（bucket、prefix、access key、secret、双方都显示的 endpoint）保留已输入值。

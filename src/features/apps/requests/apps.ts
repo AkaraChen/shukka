@@ -1,12 +1,14 @@
 import { mutationOptions, queryOptions } from '@tanstack/react-query'
 import type { QueryClient } from '@tanstack/react-query'
 import { api } from '~/lib/api.ts'
+import type { UpdaterKind } from '~/lib/updater-kind.ts'
 import type { AppDetail, AppSummary, PublicApp } from '~/server/dashboard.ts'
 import { appKeys } from './keys.ts'
 
 export type AppFormValues = {
   name: string
   slug: string
+  updaterKind?: UpdaterKind
   s3Endpoint: string | null
   s3Region: string
   s3Bucket: string
@@ -16,7 +18,7 @@ export type AppFormValues = {
   s3ForcePathStyle: boolean
 }
 
-export type StorageTestValues = Omit<AppFormValues, 'name' | 'slug'>
+export type StorageTestValues = Omit<AppFormValues, 'name' | 'slug' | 'updaterKind'>
 
 export type SetCurrentVersionVariables = {
   channel: string

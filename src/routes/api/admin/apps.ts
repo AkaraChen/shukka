@@ -2,6 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { z } from 'zod'
 import { requireAdmin } from '~/lib/auth.ts'
 import { ShukkaError, handle } from '~/lib/errors.ts'
+import { UPDATER_KINDS } from '~/lib/updater-kind.ts'
 import { createApp } from '~/server/apps.ts'
 import { appSummaries, publicApp } from '~/server/dashboard.ts'
 
@@ -15,6 +16,7 @@ export const appInputSchema = z.object({
   s3AccessKeyId: z.string().min(1),
   s3SecretAccessKey: z.string().min(1).optional(),
   s3ForcePathStyle: z.boolean().default(false),
+  updaterKind: z.enum(UPDATER_KINDS).optional(),
 })
 
 export const Route = createFileRoute('/api/admin/apps')({

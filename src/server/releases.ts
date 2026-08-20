@@ -4,8 +4,8 @@ import { db } from '~/db/index.ts'
 import { artifacts, channels, pendingUploads, versions } from '~/db/schema.ts'
 import { ShukkaError } from '~/lib/errors.ts'
 import { deleteObjects, getObjectText, headObject, objectKey, presignPut, settingsFromApp } from '~/lib/storage.ts'
-import { isMetadataFile, parseUpdateMetadata, referencedArtifacts } from '~/lib/update-metadata.ts'
 import { createChannel, getChannel, getVersion } from './channels.ts'
+import { adapterFor } from './updaters/index.ts'
 import type { App } from '~/db/schema.ts'
 
 const PENDING_TTL_SECONDS = 60 * 60
@@ -45,8 +45,9 @@ function assertVersion(version: string): void {
 export async function initUpload(app: App, input: InitInput): Promise<InitResult> {
   assertVersion(input.version)
   if (input.files.length === 0) throw new ShukkaError('invalid_request', 'At least one file is required')
-  if (!input.files.some((file) => isMetadataFile(file.filename))) {
-    throw new ShukkaError('invalid_request', 'At least one electron-updater .yml metadata file is required')
+  const adapter = adapterFor(app.updaterKind)
+  if (!adapter.hasRequiredMetadata(input.files.map((file) => file.filename))) {
+    throw new ShukkaError('invalid_request', adapter.missingMetadataMessage)
   }
   for (const file of input.files) assertFilename(file.filename)
 
@@ -124,6 +125,7 @@ export async function finalizeUpload(
 
   const s3 = settingsFromApp(app)
   const files = JSON.parse(pending.files) as PendingFile[]
+  const adapter = adapterFor(app.updaterKind)
 
   // Every declared object must exist before the version becomes visible.
   const verified = await Promise.all(
@@ -133,22 +135,26 @@ export async function finalizeUpload(
       if (file.size > 0 && head.size !== file.size) {
         throw new ShukkaError('conflict', `Size mismatch for ${file.filename}: expected ${file.size}, got ${head.size}`)
       }
-      return { ...file, size: head.size, kind: isMetadataFile(file.filename) ? ('metadata' as const) : ('artifact' as const) }
+      return {
+        ...file,
+        size: head.size,
+        kind: adapter.isMetadataFile(file.filename) ? ('metadata' as const) : ('artifact' as const),
+      }
     }),
   )
 
-  // Metadata must agree with the declared version and only reference files that were
-  // actually uploaded, otherwise clients would be offered a download that 404s.
+  // Metadata that declares a version must agree with the upload, and may only
+  // reference files that were actually uploaded (otherwise clients 404).
   const uploaded = new Set(verified.map((file) => file.filename))
   for (const file of verified.filter((entry) => entry.kind === 'metadata')) {
-    const metadata = parseUpdateMetadata(file.filename, await getObjectText(s3, file.s3Key))
-    if (metadata.version !== pending.version) {
+    const metadata = adapter.parseMetadata(file.filename, await getObjectText(s3, file.s3Key))
+    if (metadata.version && metadata.version !== pending.version) {
       throw new ShukkaError(
         'metadata_error',
         `${file.filename} declares version ${metadata.version} but the upload declares ${pending.version}`,
       )
     }
-    const missing = referencedArtifacts(metadata).filter((name) => !uploaded.has(name))
+    const missing = metadata.referenced.filter((name) => !uploaded.has(name))
     if (missing.length > 0) {
       throw new ShukkaError('metadata_error', `${file.filename} references files that were not uploaded`, missing)
     }

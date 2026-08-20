@@ -1,11 +1,13 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { Check, ChevronRight, Server } from 'lucide-react'
-import { siCloudflare, siMinio } from 'simple-icons'
+import { siCloudflare, siElectron, siMinio, siTauri } from 'simple-icons'
 import { Button } from '~/components/ui/button'
 import { useMutation } from '@tanstack/react-query'
 import { ApiError } from '~/lib/api.ts'
 import { translateError, useT, type Dictionary } from '~/lib/i18n/index.ts'
+import { slugFromName } from '~/lib/slugify.ts'
+import type { UpdaterKind } from '~/lib/updater-kind.ts'
 import { cn } from '~/lib/utils'
 import { Field } from './field.tsx'
 import { ReleaseLogConfigFields } from './release-log-fields.tsx'
@@ -14,11 +16,10 @@ import type { AppFormValues } from './requests/apps.ts'
 import { DEFAULT_NOTES_CONFIG, type NotesConfig } from '~/lib/release-log.ts'
 
 /**
- * Three-step creation wizard for /apps/new: identity (name + slug), storage
- * (provider selector with a tailored S3 field set), then release log (off by
- * default). Provider presets are a pure presentation mapping — hidden fields
- * are filled with conventional defaults at submit time and provider is never
- * persisted. Settings keeps using AppForm.
+ * Three-step creation wizard for /apps/new: identity (updater kind + name +
+ * slug), storage (provider selector with a tailored S3 field set), then
+ * release log (off by default). Provider presets are presentation-only;
+ * updaterKind is persisted. Settings keeps using AppForm and cannot change kind.
  */
 
 const SLUG_PATTERN = /^[a-z0-9][a-z0-9-]{0,62}$/
@@ -144,7 +145,12 @@ const EMPTY_STORAGE: StorageFields = {
   forcePathStyle: false,
 }
 
-type IdentityErrors = { name?: string; slug?: string }
+type IdentityErrors = { name?: string; slug?: string; updaterKind?: string }
+
+const UPDATER_KINDS: { id: UpdaterKind; icon: typeof siElectron }[] = [
+  { id: 'electron', icon: siElectron },
+  { id: 'tauri', icon: siTauri },
+]
 type StorageErrors = Partial<Record<keyof StorageFields, string>>
 
 const ENDPOINT_PLACEHOLDER: Record<ProviderId, string> = {
@@ -179,8 +185,10 @@ export function AppWizard({
 }) {
   const t = useT()
 
+  const [updaterKind, setUpdaterKind] = useState<UpdaterKind | null>(null)
   const [name, setName] = useState('')
   const [slug, setSlug] = useState('')
+  const [slugDirty, setSlugDirty] = useState(false)
   const [identityErrors, setIdentityErrors] = useState<IdentityErrors>({})
 
   const [provider, setProvider] = useState<ProviderId | null>(null)
@@ -205,6 +213,7 @@ export function AppWizard({
 
   function continueToStorage() {
     const errors: IdentityErrors = {}
+    if (!updaterKind) errors.updaterKind = t.wizard.updaterKindRequired
     if (!name.trim()) errors.name = t.wizard.nameRequired
     if (!SLUG_PATTERN.test(slug.trim())) errors.slug = t.wizard.slugHint
     setIdentityErrors(errors)
@@ -230,6 +239,7 @@ export function AppWizard({
     const base = {
       name: name.trim(),
       slug: slug.trim(),
+      updaterKind: updaterKind ?? 'electron',
       s3Bucket: storage.bucket.trim(),
       s3Prefix: storage.prefix.trim(),
       s3AccessKeyId: storage.accessKeyId.trim(),
@@ -275,7 +285,7 @@ export function AppWizard({
   }
 
   async function testConnection(): Promise<boolean> {
-    const { name: _name, slug: _slug, ...storageValues } = buildValues()
+    const { name: _name, slug: _slug, updaterKind: _kind, ...storageValues } = buildValues()
     try {
       await testStorage.mutateAsync(storageValues)
       setTested(true)
@@ -330,7 +340,35 @@ export function AppWizard({
 
       {step === 1 ? (
         <section className="mt-8">
-          <div className="grid items-start gap-x-4 gap-y-5 sm:grid-cols-2">
+          <div className="flex gap-3" role="radiogroup" aria-label={t.wizard.updaterKindLabel}>
+            {UPDATER_KINDS.map((entry) => {
+              const selected = updaterKind === entry.id
+              return (
+                <button
+                  key={entry.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={selected}
+                  onClick={() => {
+                    setUpdaterKind(entry.id)
+                    setIdentityErrors((prev) => ({ ...prev, updaterKind: undefined }))
+                  }}
+                  className={cn(
+                    'flex flex-1 flex-col items-center justify-center gap-2 rounded-2xl bg-background px-4 py-3 text-sm outline outline-1 -outline-offset-1 outline-input transition-colors',
+                    selected ? '-outline-offset-2 outline-2 outline-foreground' : 'hover:bg-accent/50',
+                  )}
+                >
+                  <SimpleIcon path={entry.icon.path} hex={entry.icon.hex} className="size-5" />
+                  {entry.id === 'electron' ? t.apps.kindElectron : t.apps.kindTauri}
+                </button>
+              )
+            })}
+          </div>
+          {identityErrors.updaterKind ? (
+            <p className="mt-2 text-sm text-destructive">{identityErrors.updaterKind}</p>
+          ) : null}
+
+          <div className="mt-6 grid items-start gap-x-4 gap-y-5 sm:grid-cols-2">
             <Field
               name="name"
               label={t.form.appName}
@@ -340,7 +378,9 @@ export function AppWizard({
               value={name}
               error={identityErrors.name}
               onChange={(event) => {
-                setName(event.target.value)
+                const next = event.target.value
+                setName(next)
+                if (!slugDirty) setSlug(slugFromName(next))
                 setIdentityErrors((prev) => ({ ...prev, name: undefined }))
               }}
             />
@@ -353,6 +393,7 @@ export function AppWizard({
               value={slug}
               error={identityErrors.slug}
               onChange={(event) => {
+                setSlugDirty(true)
                 setSlug(event.target.value)
                 setIdentityErrors((prev) => ({ ...prev, slug: undefined }))
               }}

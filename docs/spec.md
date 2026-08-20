@@ -2,18 +2,19 @@
 
 ## Product scope
 
-Shukka 是一个自托管的 Electron 应用发版管理器：管理面板 + 上传 API + 面向 electron-updater 的无鉴权更新 endpoint，制品存储在每个 app 自配的 S3 兼容存储中。
+Shukka 是一个自托管的桌面应用发版管理器：管理面板 + 上传 API + 面向 Electron / Tauri 更新客户端的无鉴权 feed，制品存储在每个 app 自配的 S3 兼容存储中。
 
 Out of scope until explicitly specified: anything not yet accepted in a PRD.
 
 ## Terminology
 
-- **App**: 一个被管理的 Electron 应用，拥有唯一 slug、一套独立 S3 配置、若干 channel 与 API key。
+- **App**: 一个被管理的桌面应用，拥有唯一 slug、一种更新系统（`updaterKind`：`electron` 或 `tauri`）、一套独立 S3 配置、若干 channel 与 API key。kind 在创建时选定，之后不改。
 - **Channel**: app 下的发布通道（app 创建时默认含 `stable`），任一时刻指向至多一个**已发布**当前版本。`name` 为 URL token：`^[a-z0-9][a-z0-9_-]{0,62}$`，不是任意文本。
 - **Version**: 一次 finalize 成功的发版记录，属于单个 channel，由制品文件与更新元数据文件组成。`releasedAt` 为空则为 **draft**（对公开面隐身）；非空则为已发布。
 - **Draft version**: finalize 成功但尚未 promote / 未带 `release: true` 的版本；有 `createdAt`，无 `releasedAt`。
-- **Artifact**: 版本内的一个文件（安装包、`*.blockmap`、`latest*.yml` 等），原样透传自 electron-builder 产物。
-- **Feed**: 某 app+channel 的无鉴权更新读取面，base URL 为 `/api/update/{appSlug}/{channel}`。
+- **Artifact**: 版本内的一个文件（安装包、`*.blockmap`、`latest*.yml`、Tauri `.sig` / `latest.json` 等），原样来自该 app 更新系统的构建产物。
+- **Feed**: 某 app+channel 的无鉴权更新读取面，base URL 为 `/api/update/{appSlug}/{channel}`。文档形状由该 app 的 `updaterKind` 决定。
+- **Update adapter**: 一种更新客户端契约的服务端实现（上传校验、feed 文档、平台识别、接入文档）。Electron 与 Tauri 各一份。
 - **API key**: 形如 `shk_<random>` 的凭证，绑定单个 app；可上传并操作该 app 内资源，不可删 app 或管理 key。
 - **Pending upload**: init 之后、finalize 之前的上传事务，对 feed 不可见。
 - **Hit bucket**: 按 version × kind（metadata/artifact）× UTC 小时预聚合的命中计数；随所属 version 级联删除，永久保留。
@@ -29,9 +30,10 @@ Out of scope until explicitly specified: anything not yet accepted in a PRD.
 
 ### Update feed（无鉴权）
 
-- `GET /api/update/{appSlug}/{channel}/{metadataFile}.yml` 返回该 channel 当前版本中同名 yml 的原文；无当前版本或文件不存在时返回 404。Shukka channel 在 URL 路径里选定；electron-updater 默认再请求 `latest.yml` / `latest-mac.yml` / `latest-linux.yml`。把 Shukka channel 名写进 electron-builder `publish.channel` 会改成请求 `stable.yml` 等，除非产物里真有这些文件。
 - `GET /api/update/{appSlug}/{channel}/{artifactName}` 对 channel 内**已发布**版本（`releasedAt` 非空）的制品按文件名解析，302 到短时效 S3 URL；draft 的文件名与不存在相同，返回 404。
-- Feed 与 electron-updater generic provider 兼容是硬契约：Shukka 永不改写 yml 内容。
+- **Electron**：`GET .../{metadataFile}.yml` 返回当前版本中同名 yml 的原文（不改写）。客户端默认请求 `latest.yml` / `latest-mac.yml` / `latest-linux.yml`。把 Shukka channel 名写进 electron-builder `publish.channel` 会改成请求 `stable.yml` 等，除非产物里真有这些文件。
+- **Tauri**：`GET /api/update/{appSlug}/{channel}` 与 `GET .../latest.json` 返回为当前已发布版本生成的静态 updater JSON（`platforms` 映射；`url` 指向本 feed 下的制品；`signature` 为对应 `.sig` 正文）。无当前版本时 404。
+- 元数据是否原文透传是 adapter 不变量，不是全系统不变量。
 - yml 命中与制品 302 分别计入所属版本的下载计数；每次命中在计数器递增的同一事务内 upsert 其 UTC 小时 hit bucket。
 
 ### Release notes（无鉴权）
@@ -42,9 +44,9 @@ Out of scope until explicitly specified: anything not yet accepted in a PRD.
 
 ### Upload API（Bearer API key）
 
-- `POST /api/v1/upload/init`：body 含 `channel`、`version`、文件清单；返回 pending upload id 与每文件 presigned PUT URL。同 channel 已存在同 version（含 draft）时拒绝；文件清单必须含至少一个 `.yml` 元数据文件。
+- `POST /api/v1/upload/init`：body 含 `channel`、`version`、文件清单；返回 pending upload id 与每文件 presigned PUT URL。同 channel 已存在同 version（含 draft）时拒绝。文件清单必须通过该 app adapter 的元数据要求（Electron：至少一个 `.yml`；Tauri：`latest.json` 和/或成对的制品 + `.sig`）。
 - 目标 channel 不存在时默认拒绝；只有显式 `createChannel: true` 才创建，避免拼写错误静默产生新 channel。新 channel 名必须符合 channel name 规则。
-- `POST /api/v1/upload/finalize`：校验对象齐全（含声明大小）后创建版本。默认 **draft**（不改 current）。`release: true` 时同时写入 `releasedAt` 并原子切换 current。任一 yml 的 `version` 与声明版本不一致时拒绝整次发版。
+- `POST /api/v1/upload/finalize`：校验对象齐全（含声明大小）后创建版本。默认 **draft**（不改 current）。`release: true` 时同时写入 `releasedAt` 并原子切换 current。声明了 `version` 的元数据（Electron yml、Tauri `latest.json`）须与上传版本一致；`.sig` 不声明 version，不做此项校验。
 - API key 与 app 不匹配返回 403；key 已吊销或无效返回 401。
 
 ### App API（`/api/v1/apps/{appSlug}`）
@@ -72,12 +74,13 @@ Out of scope until explicitly specified: anything not yet accepted in a PRD.
 - 视图角色只隐藏面板 UI 入口，不是鉴权：直接访问 URL 不被拦截，服务端不存、不校验角色。可见性矩阵——content：应用列表 + app 详情的 Channels 标签（版本表含 draft 标记、下载/检查计数、趋势图、版本统计入口）与 Settings 标签（仅 Release log 分区），另含版本 release notes 编辑（app 启用 release log 时），无 promote / 新建 channel / 新建应用 / 设置入口 / Integration / API docs；developer：另有 Integration、API docs（ReDoc）、API keys、新建 channel、新建应用、promote、app Settings（编辑表单与 Release log 分区；删除应用区块仍仅 admin），不见趋势图、版本统计入口与 release notes 编辑入口；admin：全部，另含删除应用与设置页入口。
 - Release log：创建应用向导第 3 步配置启用开关、locale 列表与回退 locale；app 设置页含「Release log」分区（左侧导航驱动，nuqs `section` 参数）；Channels 标签页历史行在 app 启用时提供 notes 编辑入口，跳转到独立编辑页面 `/apps/{appSlug}/notes/{version}`（Milkdown 所见即所得编辑器，按 locale 切换，编辑器变量映射面板主题 token）。配置与 note 编辑走 `/api/v1/apps/{slug}/...`（不触发 S3 存储探测）；note 的 PUT 为 upsert。
 - 面板 app 详情路由为 `/apps/{appSlug}`，不再使用数字 id。
+- 创建向导第一步选择 `updaterKind`（Electron / Tauri，必选、不预选）并填写名称 / slug；未手改 slug 时由名称经拼音 + GitHub Slugger 自动生成。kind 创建后不改，Settings 不展示。Integration 文案与 snippet 随 `updaterKind` 切换。
 
 ### GitHub Action
 
-- 仓库根 `action.yml` 为 composite action，inputs：`server-url`、`api-key`、`app`、`channel`、`version`、`directory`、`create-channel`、`release`（默认 false，对应 finalize 的 draft；`true` 则立即上线）；将目录内 electron-builder 产物完整发布为一个版本，outputs 为 `version` 与 `channel`。`version` 留空时从目录内 yml 读取。
+- 仓库根 `action.yml` 为 composite action，inputs：`server-url`、`api-key`、`app`、`channel`、`version`、`directory`、`create-channel`、`release`（默认 false，对应 finalize 的 draft；`true` 则立即上线）；将目录内构建产物完整发布为一个版本，outputs 为 `version` 与 `channel`。`version` 留空时从目录内 yml 读取。
 - `action.yml` 与仓库 workflow 必须通过 actionlint。
-- Feed e2e：在真实 MinIO + 已发布版本上，用 Electron library 拉起 `electron-updater`（generic provider）做 check + download + sha512；不测 `quitAndInstall`。见 `docs/adr/electron-updater-e2e.md`。
+- Feed e2e：在真实 MinIO + 已发布版本上，用 Electron library 拉起 `electron-updater`（generic provider）做 check + download + sha512；另用真实 Tauri 进程拉起 `tauri-plugin-updater` 做 check + download + minisign。两者都不测安装。见 `docs/adr/electron-updater-e2e.md`、`docs/adr/tauri-updater-e2e.md`。
 
 ## System-wide invariants
 
@@ -123,3 +126,6 @@ Out of scope until explicitly specified: anything not yet accepted in a PRD.
   `.agents/skills/shukka-ops/`.
 - Verified end to end against MinIO: publish through the action, HTTP feed + 302, and a
   host-platform `electron-updater` check/download (`tests/e2e/`, `docs/adr/electron-updater-e2e.md`).
+- Updater adapters: App `updaterKind` (`electron` | `tauri`) per `docs/prd/updater-adapters.md`
+  and `docs/adr/updater-kind-on-app.md`; Tauri process check/download per
+  `docs/adr/tauri-updater-e2e.md`.

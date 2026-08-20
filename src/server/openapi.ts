@@ -22,7 +22,7 @@ export function openApiDocument(origin: string) {
       { name: 'Notes', description: 'Per-version release notes (editor) and public read.' },
       { name: 'Keys', description: 'API key lifecycle — session only.' },
       { name: 'Upload', description: 'Presigned direct upload; defaults to draft.' },
-      { name: 'Feed', description: 'Public electron-updater feed — no auth.' },
+      { name: 'Feed', description: 'Public update feed (Electron yml or Tauri JSON) — no auth.' },
     ],
     components: {
       securitySchemes: {
@@ -223,10 +223,19 @@ export function openApiDocument(origin: string) {
           responses: { '200': { description: 'Version created' } },
         },
       },
+      '/api/update/{appSlug}/{channel}': {
+        get: {
+          tags: ['Feed'],
+          summary: 'Channel-root feed. Tauri apps return static updater JSON here.',
+          security: [],
+          parameters: [slugParam, channelParam],
+          responses: { '200': { description: 'Generated feed document' }, '404': { description: 'Missing or draft' } },
+        },
+      },
       '/api/update/{appSlug}/{channel}/{filename}': {
         get: {
           tags: ['Feed'],
-          summary: 'Public feed — yml inline, artifacts 302. Drafts are 404.',
+          summary: 'Public feed — Electron yml / Tauri latest.json inline, artifacts 302. Drafts are 404.',
           security: [],
           parameters: [slugParam, channelParam, { name: 'filename', in: 'path', required: true, schema: { type: 'string' } }],
           responses: { '200': { description: 'Metadata body' }, '302': { description: 'Artifact redirect' }, '404': { description: 'Missing or draft' } },

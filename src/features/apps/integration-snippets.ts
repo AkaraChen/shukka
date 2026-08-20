@@ -20,8 +20,7 @@ export type IntegrationSnippets = {
   agentCli: Snippet
 }
 
-/** The four snippets the integration guide shows; the route loader highlights them. */
-export function buildIntegrationSnippets({
+function electronSnippets({
   app,
   channelName,
   feedUrl,
@@ -84,4 +83,89 @@ curl -X POST ${serverUrl}/api/v1/upload/finalize \\
 npx skills add https://github.com/akarachen/shukka/archive/${skillRef}.tar.gz --skill shukka-publish`,
     },
   }
+}
+
+function tauriSnippets({
+  app,
+  channelName,
+  feedUrl,
+  serverUrl,
+}: {
+  app: PublicApp
+  channelName: string
+  feedUrl: string
+  serverUrl: string
+}): Record<keyof IntegrationSnippets, { code: string; lang: HighlightLang }> {
+  return {
+    builderConfig: {
+      lang: 'json',
+      code: `{
+  "plugins": {
+    "updater": {
+      "endpoints": ["${feedUrl}"]
+    }
+  }
+}`,
+    },
+    mainProcess: {
+      lang: 'ts',
+      code: `import { check } from '@tauri-apps/plugin-updater'
+
+const update = await check()
+if (update) {
+  await update.downloadAndInstall()
+}`,
+    },
+    githubAction: {
+      lang: 'yaml',
+      code: `- uses: akarachen/shukka@main
+  with:
+    server-url: \${{ secrets.SHUKKA_URL }}
+    api-key: \${{ secrets.SHUKKA_API_KEY }}
+    app: ${app.slug}
+    channel: ${channelName}
+    directory: src-tauri/target/release/bundle
+    # release: true   # omit to leave the version as a draft`,
+    },
+    httpApi: {
+      lang: 'bash',
+      code: `# 1. Init — latest.json and/or updater artifacts with matching .sig files
+curl -X POST ${serverUrl}/api/v1/upload/init \\
+  -H "Authorization: Bearer $SHUKKA_API_KEY" \\
+  -H "content-type: application/json" \\
+  -d '{"app":"${app.slug}","channel":"${channelName}","version":"1.4.2","files":[{"filename":"latest.json"},{"filename":"app-aarch64.app.tar.gz"},{"filename":"app-aarch64.app.tar.gz.sig"}]}'
+
+# 2. Upload each file's bytes straight to S3
+curl -X PUT --data-binary @latest.json "<uploadUrl from init>"
+
+# 3. Finalize — creates a draft. Add "release":true to go live immediately.
+curl -X POST ${serverUrl}/api/v1/upload/finalize \\
+  -H "Authorization: Bearer $SHUKKA_API_KEY" \\
+  -H "content-type: application/json" \\
+  -d '{"uploadId":"<uploadId>","app":"${app.slug}"}'`,
+    },
+    agentCli: {
+      lang: 'bash',
+      code: `# Installs the Shukka publish skill into your coding agent (Claude Code, Cursor, Codex, ...)
+npx skills add https://github.com/akarachen/shukka/archive/${skillRef}.tar.gz --skill shukka-publish`,
+    },
+  }
+}
+
+/** The four snippets the integration guide shows; the route loader highlights them. */
+export function buildIntegrationSnippets({
+  app,
+  channelName,
+  feedUrl,
+  serverUrl,
+}: {
+  app: PublicApp
+  channelName: string
+  feedUrl: string
+  serverUrl: string
+}): Record<keyof IntegrationSnippets, { code: string; lang: HighlightLang }> {
+  if (app.updaterKind === 'tauri') {
+    return tauriSnippets({ app, channelName, feedUrl, serverUrl })
+  }
+  return electronSnippets({ app, channelName, feedUrl, serverUrl })
 }

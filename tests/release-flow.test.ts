@@ -30,6 +30,8 @@ const { deleteVersion, finalizeUpload, initUpload } = await import('~/server/rel
 const { resolveFeedRequest } = await import('~/server/feed.ts')
 const { ShukkaError } = await import('~/lib/errors.ts')
 
+const ORIGIN = 'https://updates.test'
+
 const appInput = {
   name: 'Acme',
   slug: 'acme',
@@ -84,12 +86,12 @@ describe('release flow', () => {
       objects.set(file.key, file.filename === 'latest.yml' ? metadataFor('2.0.0', 'Acme-Setup-2.0.0.exe') : 'binary')
     }
 
-    const beforeFinalize = await resolveFeedRequest('acme', 'stable', 'latest.yml')
-    expect(beforeFinalize).toMatchObject({ kind: 'metadata' })
+    const beforeFinalize = await resolveFeedRequest('acme', 'stable', 'latest.yml', ORIGIN)
+    expect(beforeFinalize).toMatchObject({ kind: 'document' })
     expect((beforeFinalize as { body: string }).body).toContain('version: 1.0.0')
 
     await finalizeUpload(app, init.uploadId, { release: true })
-    const afterFinalize = await resolveFeedRequest('acme', 'stable', 'latest.yml')
+    const afterFinalize = await resolveFeedRequest('acme', 'stable', 'latest.yml', ORIGIN)
     expect((afterFinalize as { body: string }).body).toContain('version: 2.0.0')
   })
 
@@ -107,15 +109,15 @@ describe('release flow', () => {
     }
     await finalizeUpload(app, init.uploadId)
 
-    const feed = await resolveFeedRequest('acme', 'stable', 'latest.yml')
+    const feed = await resolveFeedRequest('acme', 'stable', 'latest.yml', ORIGIN)
     expect((feed as { body: string }).body).toContain('version: 1.0.0')
-    await expect(resolveFeedRequest('acme', 'stable', 'Acme-Setup-2.0.0.exe')).rejects.toThrow(/not found/)
+    await expect(resolveFeedRequest('acme', 'stable', 'Acme-Setup-2.0.0.exe', ORIGIN)).rejects.toThrow(/not found/)
 
     const { setCurrentVersion } = await import('~/server/channels.ts')
     setCurrentVersion(app.id, 'stable', '2.0.0')
-    const afterPromote = await resolveFeedRequest('acme', 'stable', 'latest.yml')
+    const afterPromote = await resolveFeedRequest('acme', 'stable', 'latest.yml', ORIGIN)
     expect((afterPromote as { body: string }).body).toContain('version: 2.0.0')
-    await expect(resolveFeedRequest('acme', 'stable', 'Acme-Setup-2.0.0.exe')).resolves.toMatchObject({ kind: 'redirect' })
+    await expect(resolveFeedRequest('acme', 'stable', 'Acme-Setup-2.0.0.exe', ORIGIN)).resolves.toMatchObject({ kind: 'redirect' })
   })
 
   it('hides a draft-only channel from the feed the same as an empty one', async () => {
@@ -129,8 +131,10 @@ describe('release flow', () => {
       objects.set(file.key, file.filename === 'latest.yml' ? metadataFor('1.0.0', 'Acme-Setup-1.0.0.exe') : 'binary')
     }
     await finalizeUpload(app, init.uploadId)
-    await expect(resolveFeedRequest('acme', 'stable', 'latest.yml')).rejects.toThrow(/no published version/)
-    await expect(resolveFeedRequest('acme', 'stable', 'Acme-Setup-1.0.0.exe')).rejects.toThrow(/not found/)
+    await expect(resolveFeedRequest('acme', 'stable', 'latest.yml', ORIGIN)).rejects.toThrow(/no published version/)
+    await expect(resolveFeedRequest('acme', 'stable', 'Acme-Setup-1.0.0.exe', ORIGIN)).rejects.toThrow(
+      /no published version/,
+    )
   })
 
   it('falls back to the latest released version, skipping drafts, when current is deleted', async () => {
@@ -162,10 +166,14 @@ describe('release flow', () => {
     const app = await createApp(appInput)
     const { installer } = await publish(app, 'stable', '1.0.0')
 
-    const metadata = await resolveFeedRequest('acme', 'stable', 'latest.yml')
-    expect(metadata).toEqual({ kind: 'metadata', body: metadataFor('1.0.0', installer) })
+    const metadata = await resolveFeedRequest('acme', 'stable', 'latest.yml', ORIGIN)
+    expect(metadata).toEqual({
+      kind: 'document',
+      contentType: 'text/yaml; charset=utf-8',
+      body: metadataFor('1.0.0', installer),
+    })
 
-    const artifact = await resolveFeedRequest('acme', 'stable', installer)
+    const artifact = await resolveFeedRequest('acme', 'stable', installer, ORIGIN)
     expect(artifact.kind).toBe('redirect')
     expect((artifact as { url: string }).url).toContain('acme/stable/1.0.0/')
   })
@@ -174,9 +182,9 @@ describe('release flow', () => {
     const app = await createApp(appInput)
     const { installer, result } = await publish(app, 'stable', '1.0.0')
 
-    await resolveFeedRequest('acme', 'stable', 'latest.yml')
-    await resolveFeedRequest('acme', 'stable', 'latest.yml')
-    await resolveFeedRequest('acme', 'stable', installer)
+    await resolveFeedRequest('acme', 'stable', 'latest.yml', ORIGIN)
+    await resolveFeedRequest('acme', 'stable', 'latest.yml', ORIGIN)
+    await resolveFeedRequest('acme', 'stable', installer, ORIGIN)
 
     const row = db.select().from(versions).where(eq(versions.id, result.versionId)).get()
     expect(row?.metadataHits).toBe(2)
@@ -259,7 +267,7 @@ describe('release flow', () => {
   it('404s the feed for a channel with no published version', async () => {
     const app = await createApp(appInput)
     createChannel(app.id, 'beta')
-    await expect(resolveFeedRequest('acme', 'beta', 'latest.yml')).rejects.toThrow(/no published version/)
+    await expect(resolveFeedRequest('acme', 'beta', 'latest.yml', ORIGIN)).rejects.toThrow(/no published version/)
   })
 })
 

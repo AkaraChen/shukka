@@ -26,9 +26,12 @@ async function call(path, method, body) {
 const state = await call('/api/admin/session', 'GET')
 await (state.initialized ? call('/api/admin/login', 'POST', { password }) : call('/api/admin/setup', 'POST', { password }))
 
+const slug = process.env.SHUKKA_APP ?? 'demo-app'
+const updaterKind = process.env.SHUKKA_UPDATER_KIND ?? 'electron'
 const { app } = await call('/api/admin/apps', 'POST', {
-  name: 'Demo App',
-  slug: 'demo-app',
+  name: slug === 'demo-app' ? 'Demo App' : slug,
+  slug,
+  updaterKind,
   s3Endpoint: process.env.MINIO_URL ?? 'http://localhost:9000',
   s3Region: 'us-east-1',
   s3Bucket: process.env.MINIO_BUCKET ?? 'releases',

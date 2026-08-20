@@ -1,0 +1,15 @@
+[package]
+name = "shukka-e2e"
+version = "1.0.0"
+edition = "2021"
+description = "Headless Tauri client for Shukka updater e2e"
+publish = false
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+serde_json = "1"
+tauri = { version = "2", features = [] }
+tauri-plugin-updater = "2"
+url = "2"

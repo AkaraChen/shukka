@@ -1,0 +1,6 @@
+{
+  "identifier": "default",
+  "description": "e2e headless updater",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

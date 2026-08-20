@@ -22,6 +22,7 @@ export function publicApp(app: App) {
     releaseLogEnabled: app.releaseLogEnabled,
     releaseLogLocales: notesConfig(app).locales,
     releaseLogFallbackLocale: app.releaseLogFallbackLocale,
+    updaterKind: app.updaterKind,
     createdAt: app.createdAt,
   }
 }

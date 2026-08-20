@@ -51,16 +51,18 @@ export const en = {
     noReleases: 'no releases',
     notFound: 'App not found',
     notFoundDetail: 'It may have been deleted.',
+    kindElectron: 'Electron',
+    kindTauri: 'Tauri',
     firstRun: {
       title: 'Ship your first update',
       description:
-        'Shukka serves electron-updater feeds straight from your own storage. Three steps to a working update pipeline:',
+        'Shukka serves Electron and Tauri update feeds straight from your own storage. Three steps to a working update pipeline:',
       step1Title: 'Create an app',
-      step1Detail: 'Name it and point it at an S3 bucket — AWS, R2, and MinIO all work.',
+      step1Detail: 'Pick Electron or Tauri, name it, and point it at an S3 bucket — AWS, R2, and MinIO all work.',
       step2Title: 'Create an API key',
       step2Detail: 'One key per repository; it can only publish to its own app.',
       step3Title: 'Publish from CI',
-      step3Detail: 'One workflow step uploads the electron-builder output as a release.',
+      step3Detail: 'One workflow step uploads the build output as a release.',
       cta: 'Create your first app',
     },
     detail: {
@@ -136,6 +138,8 @@ export const en = {
     createApp: 'Create app',
     continue: 'Continue',
     back: 'Back',
+    updaterKindLabel: 'Update client',
+    updaterKindRequired: 'Choose Electron or Tauri',
     nameRequired: 'Name is required',
     slugHint: 'Slug must be lowercase letters, digits and dashes, starting with a letter or digit',
     bucketRequired: 'Bucket is required',
@@ -230,12 +234,22 @@ export const en = {
     createKey: 'Create key',
   },
   integration: {
-    step1Title: 'Point electron-builder at the feed',
-    step1Detail: 'The generic provider writes this URL into the app at build time. No credentials — the feed is public.',
-    step2Title: 'Check for updates in the main process',
-    step2Detail: 'electron-updater reads the feed, compares versions, and downloads through it.',
+    electron: {
+      step1Title: 'Point electron-builder at the feed',
+      step1Detail: 'The generic provider writes this URL into the app at build time. No credentials — the feed is public.',
+      step2Title: 'Check for updates in the main process',
+      step2Detail: 'electron-updater reads the feed, compares versions, and downloads through it.',
+      publishDetail: 'Three ways to get the electron-builder output directory up — pick whichever fits your pipeline.',
+    },
+    tauri: {
+      step1Title: 'Point the Tauri updater at the feed',
+      step1Detail:
+        'plugin-updater reads this public endpoint. No credentials — the feed is a static platforms JSON document.',
+      step2Title: 'Check for updates in the Rust / JS side',
+      step2Detail: '@tauri-apps/plugin-updater calls check() against the endpoint configured at build time.',
+      publishDetail: 'Three ways to get the Tauri updater bundle directory up — pick whichever fits your pipeline.',
+    },
     publishTitle: 'Publish a release',
-    publishDetail: 'Three ways to get the electron-builder output directory up — pick whichever fits your pipeline.',
     githubActionTitle: 'GitHub Action',
     githubActionDetail:
       'One workflow step publishes the output directory. Create an API key in the API keys tab and store it as a repository secret first.',

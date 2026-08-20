@@ -29,6 +29,8 @@ const { createChannel, deleteChannel, getChannel } = await import('~/server/chan
 const { deleteVersion, finalizeUpload, initUpload } = await import('~/server/releases.ts')
 const { resolveFeedRequest } = await import('~/server/feed.ts')
 const { channelTrend, parseTrendRange, recordHit, versionTrend } = await import('~/server/hits.ts')
+
+const ORIGIN = 'https://updates.test'
 const { ShukkaError } = await import('~/lib/errors.ts')
 
 const HOUR = 3600
@@ -108,9 +110,9 @@ describe('hit buckets', () => {
     const app = await createApp(appInput)
     const { installer, result } = await publish(app, 'stable', '1.0.0')
 
-    await resolveFeedRequest('acme', 'stable', 'latest.yml')
-    await resolveFeedRequest('acme', 'stable', 'latest.yml')
-    await resolveFeedRequest('acme', 'stable', installer)
+    await resolveFeedRequest('acme', 'stable', 'latest.yml', ORIGIN)
+    await resolveFeedRequest('acme', 'stable', 'latest.yml', ORIGIN)
+    await resolveFeedRequest('acme', 'stable', installer, ORIGIN)
 
     const row = db.select().from(versions).where(eq(versions.id, result.versionId)).get()
     expect(row?.metadataHits).toBe(2)

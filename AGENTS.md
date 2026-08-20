@@ -39,6 +39,8 @@ Project: `shukka` — TanStack Start app (panel + API + update feed), SQLite via
 | `npm run lint` | oxlint |
 | `npm run typecheck` | `tsc -b` (needs `src/routeTree.gen.ts`, produced by a build or dev run) |
 | `npm test` | vitest |
+| `npm run test:e2e` | electron-updater against a live instance (`SHUKKA_URL`) |
+| `npm run test:e2e:tauri` | Tauri plugin-updater against a live instance (`SHUKKA_URL`) |
 | `npm run test:e2e` | Host-platform electron-updater check+download against a live Shukka (`SHUKKA_URL`, `SHUKKA_API_KEY`) |
 | `npm run db:generate` | Regenerate `drizzle/` migrations after editing `src/db/schema.ts` |
 | `actionlint` | Lint `action.yml` and workflows |

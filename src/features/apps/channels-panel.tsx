@@ -122,7 +122,7 @@ function ChannelView({ slug, app, channel }: { slug: string; app: PublicApp; cha
           <p className="font-mono text-2xl tracking-tight tabular-nums">v{current.version}</p>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-sm text-muted-foreground">
             <span>{t.channels.released(format.when(current.releasedAt ?? current.createdAt))}</span>
-            {platformsOf(current).map((platform) => (
+            {platformsOf(current, app.updaterKind).map((platform) => (
               <Badge key={platform} variant="outline" className="text-muted-foreground">
                 {platform}
               </Badge>

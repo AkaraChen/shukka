@@ -29,20 +29,23 @@ export function IntegrationPanel({
   const feedUrl = channel?.feedUrl ?? `https://your-shukka-host/api/update/${app.slug}/stable`
   const serverUrl = feedUrl.replace(/\/api\/update\/.*$/, '')
 
+  const copy = app.updaterKind === 'tauri' ? t.integration.tauri : t.integration.electron
   const steps = [
     {
-      title: t.integration.step1Title,
-      detail: t.integration.step1Detail,
+      title: copy.step1Title,
+      detail: copy.step1Detail,
       snippet: snippets.builderConfig,
     },
     {
-      title: t.integration.step2Title,
-      detail: t.integration.step2Detail,
+      title: copy.step2Title,
+      detail: copy.step2Detail,
       snippet: snippets.mainProcess,
     },
   ]
 
-  const actionPrompt = `Set up electron-updater self-updates for this app using my Shukka instance.
+  const actionPrompt =
+    app.updaterKind === 'tauri'
+      ? `Set up Tauri plugin-updater self-updates for this app using my Shukka instance.
 
 Facts:
 - Update feed (public, no auth): ${feedUrl}
@@ -51,12 +54,46 @@ Facts:
 - Publishing goes through the Shukka GitHub Action (akarachen/shukka@main) with repository secrets SHUKKA_URL (my Shukka base URL) and SHUKKA_API_KEY (I will create it in the panel and add it to the repo myself — never ask me to paste it into code).
 
 Do all of the following:
-1. In electron-builder config, set publish to the generic provider pointing at the feed URL above, with channel "${channelName}".
-2. In the Electron main process, configure electron-updater with that feed URL and channel, and call checkForUpdatesAndNotify() after app ready.
-3. Add a GitHub Actions workflow that builds the electron-builder output and publishes the dist directory with the Shukka action (inputs: server-url, api-key, app, channel, directory).
-4. Verify the config is coherent (channel names match everywhere) and tell me what manual steps remain (creating the API key, adding the secrets).`
+1. In tauri.conf, set plugins.updater.endpoints to the feed URL above (the channel-root URL, not a latest.json path).
+2. Call check() from @tauri-apps/plugin-updater when the app should look for updates.
+3. Add a GitHub Actions workflow that builds the Tauri updater bundles and publishes that directory with the Shukka action (inputs: server-url, api-key, app, channel, directory).
+4. Tell me what manual steps remain (creating the API key, adding the secrets, embedding the updater pubkey).`
+      : `Set up electron-updater self-updates for this app using my Shukka instance.
 
-  const httpApiPrompt = `Set up electron-updater self-updates for this app using my Shukka instance, publishing over the raw HTTP API (no GitHub Action).
+Facts:
+- Update feed (public, no auth): ${feedUrl}
+- Channel: ${channelName}
+- App slug: ${app.slug}
+- Publishing goes through the Shukka GitHub Action (akarachen/shukka@main) with repository secrets SHUKKA_URL (my Shukka base URL) and SHUKKA_API_KEY (I will create it in the panel and add it to the repo myself — never ask me to paste it into code).
+
+Do all of the following:
+1. In electron-builder config, set publish to the generic provider pointing at the feed URL above. Do not set publish.channel — the feed URL already includes the Shukka channel.
+2. In the Electron main process, configure electron-updater with that feed URL (no channel override) and call checkForUpdatesAndNotify() after app ready.
+3. Add a GitHub Actions workflow that builds the electron-builder output and publishes the dist directory with the Shukka action (inputs: server-url, api-key, app, channel, directory).
+4. Verify the config is coherent and tell me what manual steps remain (creating the API key, adding the secrets).`
+
+  const httpApiPrompt =
+    app.updaterKind === 'tauri'
+      ? `Set up Tauri plugin-updater self-updates for this app using my Shukka instance, publishing over the raw HTTP API (no GitHub Action).
+
+Facts:
+- Update feed (public, no auth): ${feedUrl}
+- Channel: ${channelName}
+- App slug: ${app.slug}
+- Shukka base URL: ${serverUrl}
+- Authentication: header \`Authorization: Bearer shk_...\` — I will create the API key in the panel and provide it to the CI environment myself; never hardcode it.
+
+Upload protocol (JSON bodies; errors are { "error": <code>, "message": <string> }):
+1. POST ${serverUrl}/api/v1/upload/init with { "app": "${app.slug}", "channel": "${channelName}", "version": "<version>", "files": [{ "filename": "<name>", "size": <bytes> }, ...] } — the file list is the updater bundles plus matching .sig files, optionally latest.json. The response contains uploadId and, per file, a presigned uploadUrl.
+2. PUT each file's raw bytes to its uploadUrl (direct to S3; URLs expire one hour after init).
+3. POST ${serverUrl}/api/v1/upload/finalize with { "uploadId": "<id>", "app": "${app.slug}" } — Shukka verifies the objects and creates a draft. Pass "release": true to go live in the same call. Promote later with PATCH /api/v1/apps/${app.slug}/channels/${channelName} { "currentVersion": "<version>" }.
+
+Do all of the following:
+1. In tauri.conf, set plugins.updater.endpoints to the feed URL above.
+2. Call check() from @tauri-apps/plugin-updater when the app should look for updates.
+3. Write a publish script (or CI step) that follows the upload protocol above against the updater bundle directory.
+4. Tell me what manual steps remain (creating the API key, wiring it into CI, embedding the updater pubkey).`
+      : `Set up electron-updater self-updates for this app using my Shukka instance, publishing over the raw HTTP API (no GitHub Action).
 
 Facts:
 - Update feed (public, no auth): ${feedUrl}
@@ -71,10 +108,10 @@ Upload protocol (JSON bodies; errors are { "error": <code>, "message": <string> 
 3. POST ${serverUrl}/api/v1/upload/finalize with { "uploadId": "<id>", "app": "${app.slug}" } — Shukka verifies the objects, parses the yml, and creates a draft. Pass "release": true to go live in the same call. Promote later with PATCH /api/v1/apps/${app.slug}/channels/${channelName} { "currentVersion": "<version>" }.
 
 Do all of the following:
-1. In electron-builder config, set publish to the generic provider pointing at the feed URL above, with channel "${channelName}".
-2. In the Electron main process, configure electron-updater with that feed URL and channel, and call checkForUpdatesAndNotify() after app ready.
+1. In electron-builder config, set publish to the generic provider pointing at the feed URL above. Do not set publish.channel — the feed URL already includes the Shukka channel.
+2. In the Electron main process, configure electron-updater with that feed URL (no channel override) and call checkForUpdatesAndNotify() after app ready.
 3. Write a publish script (or CI step) that follows the upload protocol above against the electron-builder output directory, reading the version from the latest*.yml it contains.
-4. Verify the config is coherent (channel names match everywhere) and tell me what manual steps remain (creating the API key, wiring it into CI).`
+4. Verify the config is coherent and tell me what manual steps remain (creating the API key, wiring it into CI).`
 
   return (
     <div className="max-w-3xl space-y-10">
@@ -98,7 +135,7 @@ Do all of the following:
           <span className="font-mono text-sm text-muted-foreground">03</span>
           <h3 className="text-base">{t.integration.publishTitle}</h3>
         </div>
-        <p className="pl-8 text-sm text-muted-foreground">{t.integration.publishDetail}</p>
+        <p className="pl-8 text-sm text-muted-foreground">{copy.publishDetail}</p>
 
         <Tabs defaultValue="action" className="mt-2.5 pl-8">
           <TabsList>

@@ -51,7 +51,12 @@ function AppsPage() {
                 params={{ appSlug: app.slug }}
                 className="flex h-full flex-col rounded-2xl bg-card px-5 py-5 transition-colors hover:bg-accent/60"
               >
-                <p className="truncate">{app.name}</p>
+                <div className="flex items-baseline justify-between gap-3">
+                  <p className="truncate">{app.name}</p>
+                  <p className="shrink-0 text-xs text-muted-foreground">
+                    {app.updaterKind === 'tauri' ? t.apps.kindTauri : t.apps.kindElectron}
+                  </p>
+                </div>
                 <p className="mt-0.5 truncate text-xs text-muted-foreground">
                   {app.lastReleasedAt
                     ? `${t.apps.lastRelease} ${format.when(app.lastReleasedAt)}`

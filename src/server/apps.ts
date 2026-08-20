@@ -4,6 +4,7 @@ import { apiKeys, apps, artifacts, channels, versions } from '~/db/schema.ts'
 import { encryptSecret } from '~/lib/crypto.ts'
 import { ShukkaError } from '~/lib/errors.ts'
 import { deleteObjects, settingsFromApp, verifyWritable } from '~/lib/storage.ts'
+import type { UpdaterKind } from '~/lib/updater-kind.ts'
 import type { App } from '~/db/schema.ts'
 
 export const DEFAULT_CHANNEL = 'stable'
@@ -19,6 +20,8 @@ export type AppInput = {
   /** Omit on update to keep the stored secret. */
   s3SecretAccessKey?: string
   s3ForcePathStyle: boolean
+  /** Create only. Omitted → electron. Ignored on update. */
+  updaterKind?: UpdaterKind
 }
 
 export const SLUG_PATTERN = /^[a-z0-9][a-z0-9-]{0,62}$/
@@ -79,6 +82,7 @@ export async function createApp(input: AppInput): Promise<App> {
       s3AccessKeyId: input.s3AccessKeyId,
       s3SecretEncrypted: encryptSecret(input.s3SecretAccessKey),
       s3ForcePathStyle: input.s3ForcePathStyle,
+      updaterKind: input.updaterKind ?? 'electron',
     })
     .returning()
     .get()

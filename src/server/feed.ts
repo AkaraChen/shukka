@@ -3,40 +3,60 @@ import { db } from '~/db/index.ts'
 import { artifacts, versions } from '~/db/schema.ts'
 import { ShukkaError } from '~/lib/errors.ts'
 import { getObjectText, presignGet, settingsFromApp } from '~/lib/storage.ts'
-import { isMetadataFile } from '~/lib/update-metadata.ts'
 import { getAppBySlug } from './apps.ts'
 import { getChannel } from './channels.ts'
 import { recordHit } from './hits.ts'
+import { adapterFor } from './updaters/index.ts'
 
 /**
- * Serves the update feed consumed by electron-updater's generic provider.
- * Metadata resolves against the channel's current version; artifacts resolve
- * by filename across the channel so a version switch mid-download stays valid
- * (ADR: update-feed-proxy).
+ * Serves the update feed. Document shape is the app's updater adapter;
+ * artifacts always 302 to storage (ADR: update-feed-proxy, updater-kind-on-app).
  */
 export async function resolveFeedRequest(
   appSlug: string,
   channelName: string,
   filename: string,
-): Promise<{ kind: 'metadata'; body: string } | { kind: 'redirect'; url: string }> {
+  origin: string,
+): Promise<{ kind: 'document'; contentType: string; body: string } | { kind: 'redirect'; url: string }> {
   const app = getAppBySlug(appSlug)
   const channel = getChannel(app.id, channelName)
   const s3 = settingsFromApp(app)
+  const adapter = adapterFor(app.updaterKind)
 
-  if (isMetadataFile(filename)) {
-    if (!channel.currentVersionId) {
-      throw new ShukkaError('not_found', `Channel "${channelName}" has no published version`)
+  if (!channel.currentVersionId) {
+    throw new ShukkaError('not_found', `Channel "${channelName}" has no published version`)
+  }
+
+  const current = db.select().from(versions).where(eq(versions.id, channel.currentVersionId)).get()
+  if (!current?.releasedAt) {
+    throw new ShukkaError('not_found', `Channel "${channelName}" has no published version`)
+  }
+
+  const currentArtifacts = db.select().from(artifacts).where(eq(artifacts.versionId, current.id)).all()
+
+  if (adapter.generateFeedDocument) {
+    const generated = await adapter.generateFeedDocument({
+      filename,
+      origin,
+      appSlug,
+      channelName,
+      releasedAt: current.releasedAt,
+      version: current.version,
+      artifacts: currentArtifacts,
+      getText: (key) => getObjectText(s3, key),
+    })
+    if (generated) {
+      recordHit(current.id, 'metadata')
+      return { kind: 'document', contentType: generated.contentType, body: generated.body }
     }
-    const artifact = db
-      .select()
-      .from(artifacts)
-      .where(and(eq(artifacts.versionId, channel.currentVersionId), eq(artifacts.filename, filename)))
-      .get()
-    if (!artifact) throw new ShukkaError('not_found', `${filename} is not part of the current release`)
+  }
 
+  if (adapter.isMetadataFile(filename)) {
+    const artifact = currentArtifacts.find((entry) => entry.filename === filename)
+    if (!artifact) throw new ShukkaError('not_found', `${filename} is not part of the current release`)
     const body = await getObjectText(s3, artifact.s3Key)
-    recordHit(channel.currentVersionId, 'metadata')
-    return { kind: 'metadata', body }
+    recordHit(current.id, 'metadata')
+    return { kind: 'document', contentType: 'text/yaml; charset=utf-8', body }
   }
 
   const artifact = db
@@ -53,4 +73,23 @@ export async function resolveFeedRequest(
 
 export function feedBaseUrl(origin: string, appSlug: string, channelName: string): string {
   return `${origin.replace(/\/+$/, '')}/api/update/${appSlug}/${channelName}`
+}
+
+/** Shared response for the channel-root and splat feed routes. */
+export async function serveFeedRequest(
+  request: Request,
+  appSlug: string,
+  channelName: string,
+  filename: string,
+): Promise<Response> {
+  const result = await resolveFeedRequest(appSlug, channelName, filename, new URL(request.url).origin)
+  if (result.kind === 'redirect') {
+    return new Response(null, {
+      status: 302,
+      headers: { location: result.url, 'cache-control': 'no-store' },
+    })
+  }
+  return new Response(result.body, {
+    headers: { 'content-type': result.contentType, 'cache-control': 'no-store' },
+  })
 }

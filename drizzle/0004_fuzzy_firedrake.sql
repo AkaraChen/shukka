@@ -1,0 +1,1 @@
+ALTER TABLE `apps` ADD `updater_kind` text DEFAULT 'electron' NOT NULL;
