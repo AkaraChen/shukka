@@ -17,6 +17,7 @@ import {
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '~/components/ui/table'
+import { Confirm } from '~/components/confirm.tsx'
 import { useFormatters, useT } from '~/lib/i18n/index.ts'
 import { createApiKeyMutationOptions, deleteApiKeyMutationOptions, revokeApiKeyMutationOptions } from './requests/apps.ts'
 import type { AppDetail } from '~/server/dashboard.ts'
@@ -115,10 +116,13 @@ function KeyRow({ slug, apiKey }: { slug: string; apiKey: ApiKey }) {
               size="icon"
               className="size-7 text-muted-foreground hover:text-destructive"
               aria-label={t.apiKeys.delete}
-              onClick={() => {
-                if (confirm(t.apiKeys.deleteConfirm(apiKey.name))) {
-                  deleteKey.mutate(apiKey.id)
-                }
+              onClick={async () => {
+                const ok = await Confirm.call({
+                  title: t.apiKeys.deleteConfirm(apiKey.name),
+                  destructive: true,
+                  confirmLabel: t.common.delete,
+                })
+                if (ok) deleteKey.mutate(apiKey.id)
               }}
             >
               <Trash2 />
@@ -129,10 +133,13 @@ function KeyRow({ slug, apiKey }: { slug: string; apiKey: ApiKey }) {
             variant="ghost"
             size="sm"
             className="text-muted-foreground"
-            onClick={() => {
-              if (confirm(t.apiKeys.revokeConfirm(apiKey.name))) {
-                revoke.mutate(apiKey.id)
-              }
+            onClick={async () => {
+              const ok = await Confirm.call({
+                title: t.apiKeys.revokeConfirm(apiKey.name),
+                destructive: true,
+                confirmLabel: t.apiKeys.revoke,
+              })
+              if (ok) revoke.mutate(apiKey.id)
             }}
           >
             {t.apiKeys.revoke}

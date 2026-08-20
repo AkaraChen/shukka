@@ -15,6 +15,8 @@ export const en = {
     testPassed: 'Connection verified — bucket is writable.',
     copyToClipboard: 'Copy to clipboard',
     delete: 'Delete',
+    cancel: 'Cancel',
+    confirm: 'Confirm',
   },
   auth: {
     loginTitle: 'Sign in to Shukka',

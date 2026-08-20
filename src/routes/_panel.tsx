@@ -19,6 +19,7 @@ import {
   SidebarProvider,
   SidebarTrigger,
 } from '~/components/ui/sidebar'
+import { Confirm, Prompt } from '~/components/confirm.tsx'
 import { useT } from '~/lib/i18n/index.ts'
 import { getSessionState } from '~/server/session-fn.ts'
 
@@ -90,6 +91,8 @@ function PanelLayout() {
         </div>
         <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 px-5 pb-12">
           <Outlet />
+          <Confirm />
+          <Prompt />
         </div>
       </SidebarInset>
     </SidebarProvider>

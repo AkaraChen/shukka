@@ -15,6 +15,7 @@ import {
   upsertNoteMutationOptions,
   versionNotesQueryOptions,
 } from '~/features/apps/requests/notes.ts'
+import { Confirm } from '~/components/confirm.tsx'
 import { translateError, useFormatters, useT } from '~/lib/i18n/index.ts'
 
 const NotesEditor = lazy(() => import('~/features/apps/notes-editor.tsx').then((m) => ({ default: m.NotesEditor })))
@@ -197,8 +198,13 @@ function VersionNotesPage() {
               <Button
                 variant="outline"
                 disabled={deleteNote.isPending}
-                onClick={() => {
-                  if (confirm(t.releaseLog.deleteNoteConfirm(locale))) void remove()
+                onClick={async () => {
+                  const ok = await Confirm.call({
+                    title: t.releaseLog.deleteNoteConfirm(locale),
+                    destructive: true,
+                    confirmLabel: t.releaseLog.deleteNote,
+                  })
+                  if (ok) void remove()
                 }}
               >
                 {t.releaseLog.deleteNote}

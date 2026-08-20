@@ -12,6 +12,8 @@ export const zh = {
     testPassed: '连接正常——存储桶可写。',
     copyToClipboard: '复制到剪贴板',
     delete: '删除',
+    cancel: '取消',
+    confirm: '确认',
   },
   auth: {
     loginTitle: '登录 Shukka',

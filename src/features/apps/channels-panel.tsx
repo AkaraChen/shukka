@@ -20,6 +20,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '~
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '~/components/ui/table'
 import { Tabs, TabsList, TabsTrigger } from '~/components/ui/tabs'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '~/components/ui/tooltip'
+import { Confirm } from '~/components/confirm.tsx'
 import { useFormatters, useT } from '~/lib/i18n/index.ts'
 import { useViewRole } from '~/lib/role-context.ts'
 import { canEditReleaseNotes, canPromote, canSeeTrafficStats } from '~/lib/role.ts'
@@ -287,10 +288,13 @@ function HistoryTable({ slug, app, channel }: { slug: string; app: PublicApp; ch
                           size="icon"
                           className="size-7 text-destructive hover:text-destructive"
                           aria-label={t.channels.deleteVersion(version.version)}
-                          onClick={() => {
-                            if (confirm(t.channels.deleteVersionConfirm(version.version))) {
-                              deleteVersion.mutate({ channel: channel.name, version: version.version })
-                            }
+                          onClick={async () => {
+                            const ok = await Confirm.call({
+                              title: t.channels.deleteVersionConfirm(version.version),
+                              destructive: true,
+                              confirmLabel: t.common.delete,
+                            })
+                            if (ok) deleteVersion.mutate({ channel: channel.name, version: version.version })
                           }}
                         >
                           <Trash2 />
