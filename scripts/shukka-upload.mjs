@@ -5,7 +5,7 @@
  * Protocol (docs/adr/presigned-direct-upload.md):
  *   init -> presigned PUT per file -> direct upload to S3 -> finalize
  *
- * Zero dependencies so it can run from a composite action without a build step.
+ * Zero dependencies so the JavaScript action can run it without a build step.
  */
 import { createReadStream } from 'node:fs'
 import { readdir, readFile, stat } from 'node:fs/promises'
@@ -21,6 +21,14 @@ function fail(message) {
 function required(name, value) {
   if (!value) fail(`Missing required input: ${name}`)
   return value
+}
+
+/**
+ * Standalone CI sets SHUKKA_*; a JavaScript action exposes inputs as INPUT_*.
+ * `server-url` becomes `INPUT_SERVER-URL` (hyphens kept, per Actions metadata).
+ */
+function readInput(actionInput, envName, fallback = '') {
+  return process.env[envName] || process.env[`INPUT_${actionInput.toUpperCase()}`] || fallback
 }
 
 /** electron-builder emits blockmaps and yml alongside installers; skip nothing else. */
@@ -78,13 +86,13 @@ async function putFile(uploadUrl, file) {
 }
 
 async function main() {
-  const serverUrl = required('server-url', process.env.SHUKKA_SERVER_URL)
-  const apiKey = required('api-key', process.env.SHUKKA_API_KEY)
-  const app = required('app', process.env.SHUKKA_APP)
-  const channel = process.env.SHUKKA_CHANNEL || 'stable'
-  const directory = resolve(process.env.SHUKKA_DIRECTORY || 'dist')
-  const createChannel = process.env.SHUKKA_CREATE_CHANNEL === 'true'
-  const release = process.env.SHUKKA_RELEASE === 'true'
+  const serverUrl = required('server-url', readInput('server-url', 'SHUKKA_SERVER_URL'))
+  const apiKey = required('api-key', readInput('api-key', 'SHUKKA_API_KEY'))
+  const app = required('app', readInput('app', 'SHUKKA_APP'))
+  const channel = readInput('channel', 'SHUKKA_CHANNEL', 'stable')
+  const directory = resolve(readInput('directory', 'SHUKKA_DIRECTORY', 'dist'))
+  const createChannel = readInput('create-channel', 'SHUKKA_CREATE_CHANNEL') === 'true'
+  const release = readInput('release', 'SHUKKA_RELEASE') === 'true'
 
   const files = await collectFiles(directory)
   if (files.length === 0) fail(`No files to publish in ${directory}`)

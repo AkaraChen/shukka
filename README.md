@@ -92,9 +92,10 @@ npm run check      # lint, typecheck, tests
 npm run db:generate # regenerate migrations after editing src/db/schema.ts
 ```
 
-The GitHub Action is linted with [actionlint](https://github.com/rhysd/actionlint) and
-exercised end to end with [act](https://github.com/nektos/act) against a local MinIO —
-see the comment at the top of `.github/workflows/action-test.yml`.
+The GitHub Action is a JavaScript action (`using: node24`) so it does not need
+bash — Windows self-hosted runners with only MinGit work. It is linted with
+[actionlint](https://github.com/rhysd/actionlint) and exercised end to end on
+Ubuntu and Windows runners against MinIO; see `.github/workflows/action-test.yml`.
 
 ## Documentation
 

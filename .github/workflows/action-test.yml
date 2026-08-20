@@ -42,6 +42,9 @@ permissions:
 # SHUKKA_URL is dialled from inside the act container, while MINIO_URL is the
 # endpoint the host-side Shukka process uses - hence the different hostnames.
 # The two setup steps below are skipped under act since the host provides both.
+#
+# publish-windows starts MinIO from the official binary (hosted Windows has no
+# Docker) and exercises the JavaScript action — no bash — plus electron-updater.
 jobs:
   publish:
     runs-on: ubuntu-latest
@@ -49,9 +52,9 @@ jobs:
       SHUKKA_URL: ${{ vars.SHUKKA_URL || 'http://localhost:3000' }}
       MINIO_URL: ${{ vars.MINIO_URL || 'http://localhost:9000' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7.0.0
         with:
           node-version: '24'
 
@@ -112,6 +115,67 @@ jobs:
           E2E_VERSION: ${{ steps.publish.outputs.version }}
           ELECTRON_DISABLE_SANDBOX: '1'
 
+  publish-windows:
+    name: Publish on Windows
+    runs-on: windows-latest
+    timeout-minutes: 40
+    env:
+      SHUKKA_URL: ${{ vars.SHUKKA_URL || 'http://localhost:3000' }}
+      MINIO_URL: ${{ vars.MINIO_URL || 'http://localhost:9000' }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Start MinIO
+        if: ${{ !env.ACT }}
+        run: node .github/scripts/start-minio.mjs
+
+      - name: Build and start Shukka
+        if: ${{ !env.ACT }}
+        run: |
+          npm ci
+          npm run build
+          node .github/scripts/start-server.mjs
+
+      - name: Provision app, bucket and API key
+        id: provision
+        run: node .github/scripts/provision.mjs
+
+      - name: Build a fake electron-builder release
+        run: node .github/scripts/fake-release.mjs out "2.0.${{ github.run_number }}"
+
+      - name: Publish with the action
+        id: publish
+        uses: ./
+        with:
+          server-url: ${{ env.SHUKKA_URL }}
+          api-key: ${{ steps.provision.outputs.api-key }}
+          app: demo-app
+          channel: stable
+          directory: out
+          release: true
+
+      - name: Verify the update feed serves the new version
+        run: node .github/scripts/verify-feed.mjs "${{ env.SHUKKA_URL }}/api/update/demo-app/stable" "${{ steps.publish.outputs.version }}"
+
+      - name: Install electron-updater e2e
+        run: npm ci --prefix tests/e2e
+
+      - name: electron-updater check and download
+        run: node tests/e2e/run.mjs
+        env:
+          SHUKKA_URL: ${{ env.SHUKKA_URL }}
+          SHUKKA_API_KEY: ${{ steps.provision.outputs.api-key }}
+          SHUKKA_APP: demo-app
+          SHUKKA_CHANNEL: stable
+          E2E_SKIP_PUBLISH: '1'
+          E2E_VERSION: ${{ steps.publish.outputs.version }}
+          ELECTRON_DISABLE_SANDBOX: '1'
+
   tauri-updater:
     runs-on: ubuntu-latest
     timeout-minutes: 40
@@ -119,9 +183,9 @@ jobs:
       SHUKKA_URL: ${{ vars.SHUKKA_URL || 'http://localhost:3000' }}
       MINIO_URL: ${{ vars.MINIO_URL || 'http://localhost:9000' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7.0.0
         with:
           node-version: '24'
 

@@ -23,7 +23,7 @@ Shukka 是一个自托管的发版管理器：面板管理 app / channel / 版�
 7. 面板提供每个 channel 的 feed URL 和可复制的 electron-builder `publish` / electron-updater 配置片段。
 8. 基础下载计数：按版本记录 yml 拉取次数与制品 302 次数，面板展示。
 9. 面板认证：首次启动引导设置管理员密码（存 hash），登录换 session，面板内可改密。
-10. 配套 GitHub composite action（本仓库根 `action.yml` + Node 上传脚本），用 act 本地验证、actionlint 检查。
+10. 配套 GitHub JavaScript action（本仓库根 `action.yml` 以 runner Node 直接执行 `scripts/shukka-upload.mjs`），用 actionlint 检查，并在 Ubuntu / Windows runner 上验证。
 11. 仓库内提供 agent skill，指导 agent 通过 Shukka API 完成建 app / 建 channel / 发 key / 上传发版等操作。
 
 ## Non-goals
@@ -65,5 +65,5 @@ Shukka 是一个自托管的发版管理器：面板管理 app / channel / 版�
 - [x] finalize 之前 channel 的 feed 始终返回旧版本；仅 `release: true` 的 finalize 或事后 promote 之后返回新版本（见 `docs/prd/draft-releases.md`）。
 - [x] 同一 channel 重复上传同一 version 被拒绝（除非先在面板删除该版本）。
 - [x] 面板 app 列表、channel 列表、版本列表、下载计数、feed URL、配置片段均可见；UI 为 shadcn sidebar 应用壳。
-- [x] `action.yml` 通过 actionlint；act 本地跑通示例 workflow 完成一次真实上传（对本地 MinIO + 本地 Shukka）。
+- [x] `action.yml` 通过 actionlint；GitHub-hosted Ubuntu 与 Windows runner 跑通示例 workflow 完成一次真实上传（对本地 MinIO + 本地 Shukka）。
 - [x] agent skill 描述的每个 API 调用与实现一致。
