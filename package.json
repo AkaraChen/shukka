@@ -2,6 +2,25 @@
   "name": "shukka",
   "private": true,
   "version": "0.1.0",
+  "license": "MIT",
+  "description": "Self-hosted release manager for Electron and Tauri apps that update through S3",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shukka-app/shukka.git"
+  },
+  "bugs": {
+    "url": "https://github.com/shukka-app/shukka/issues"
+  },
+  "homepage": "https://github.com/shukka-app/shukka#readme",
+  "keywords": [
+    "electron",
+    "electron-updater",
+    "electron-builder",
+    "tauri",
+    "self-hosted",
+    "s3",
+    "auto-update"
+  ],
   "type": "module",
   "scripts": {
     "dev": "vite dev",
@@ -71,6 +90,5 @@
     "typescript": "~6.0.2",
     "vite": "^8.2.0",
     "vitest": "^4.1.10"
-  },
-  "description": "Self-hosted release manager for electron-updater on S3"
+  }
 }
