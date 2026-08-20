@@ -37,9 +37,9 @@ API key 只能 init/finalize 上传。面板能做的设 current、建 channel�
 
 ### 开发者：对照文档
 
-1. 点击 app 详情的 API docs 入口，新浏览器标签打开 `/docs`，整页 ReDoc 渲染当前服务器的 OpenAPI。
+1. 点击 app 详情的 API docs 入口，新浏览器标签打开 `/docs`：server route 返回自建 HTML（cheerio 把本地 `redoc` bundle 内联进模板），`Redoc.init` 让浏览器同源 fetch `/api/v1/openapi.json` 渲染当前服务器的 OpenAPI。
 2. 或从 Integration 的 HTTP API 方式点跳转按钮，同样打开 `/docs`。
-3. 文档标明哪些操作接受 API key、哪些仅 session。
+3. 文档只展示 API key（或 session）可调用的操作与公开 feed/notes；session-only 管理操作（删 app、API key 生命周期、实例级路由）不在公开 API 文档中。
 
 ## Acceptance criteria
 

@@ -1,8 +1,9 @@
 /**
- * OpenAPI 3 document for the programmatic App API, upload protocol, public
- * feed, and public notes. Session-only ops are marked; everything else on
- * `/api/v1/apps/{slug}` accepts a session cookie or a Bearer key bound to
- * that slug (ADR: app-api-v1).
+ * OpenAPI 3 document for the operations an API key (or panel session) can
+ * call: the programmatic App API under `/api/v1/apps/{slug}`, the upload
+ * protocol, and the public no-auth feed and notes. Session-only admin
+ * operations (delete app, API key lifecycle, instance-level routes) are
+ * intentionally omitted (ADR: app-api-v1).
  */
 export function openApiDocument(origin: string) {
   const server = origin.replace(/\/+$/, '')
@@ -12,15 +13,14 @@ export function openApiDocument(origin: string) {
       title: 'Shukka API',
       version: '1.0.0',
       description:
-        'App-scoped operations live under `/api/v1/apps/{appSlug}`. Send `Authorization: Bearer shk_…` (key bound to that app) or a panel session cookie. Keys cannot delete the app or manage API keys. Instance-level routes under `/api/admin` are session-only.',
+        'Operations an API key (or panel session) can call under `/api/v1/apps/{appSlug}`, the upload protocol, and the public no-auth feed. Session-only admin operations (delete the app, API key lifecycle, instance-level routes under `/api/admin`) are not documented here.',
     },
     servers: [{ url: server }],
     tags: [
-      { name: 'App', description: 'Read and update one app. DELETE is session-only.' },
+      { name: 'App', description: 'Read and update one app.' },
       { name: 'Channels', description: 'Channels and current-version promote / rollback.' },
       { name: 'Versions', description: 'Delete a version; read its notes and trend.' },
       { name: 'Notes', description: 'Per-version release notes (editor) and public read.' },
-      { name: 'Keys', description: 'API key lifecycle — session only.' },
       { name: 'Upload', description: 'Presigned direct upload; defaults to draft.' },
       { name: 'Feed', description: 'Public update feed (Electron yml or Tauri JSON) — no auth.' },
     ],
@@ -44,13 +44,6 @@ export function openApiDocument(origin: string) {
           summary: 'Update app settings (probes S3)',
           parameters: [slugParam],
           responses: { '200': { description: 'Updated app' } },
-        },
-        delete: {
-          tags: ['App'],
-          summary: 'Delete the app — session only',
-          security: [{ session: [] }],
-          parameters: [slugParam],
-          responses: { '200': { description: 'Deleted' }, '403': { description: 'API key rejected' } },
         },
       },
       '/api/v1/apps/{appSlug}/channels': {
@@ -165,31 +158,6 @@ export function openApiDocument(origin: string) {
           summary: 'Save release-log config (no S3 probe)',
           parameters: [slugParam],
           responses: { '200': { description: 'Saved config' } },
-        },
-      },
-      '/api/v1/apps/{appSlug}/keys': {
-        get: {
-          tags: ['Keys'],
-          summary: 'List keys — session only',
-          security: [{ session: [] }],
-          parameters: [slugParam],
-          responses: { '200': { description: 'Keys' } },
-        },
-        post: {
-          tags: ['Keys'],
-          summary: 'Create a key — session only; plaintext returned once',
-          security: [{ session: [] }],
-          parameters: [slugParam],
-          responses: { '201': { description: 'Created' } },
-        },
-      },
-      '/api/v1/apps/{appSlug}/keys/{keyId}': {
-        delete: {
-          tags: ['Keys'],
-          summary: 'Revoke a key, or `?mode=delete` a revoked key — session only',
-          security: [{ session: [] }],
-          parameters: [slugParam, { name: 'keyId', in: 'path', required: true, schema: { type: 'integer' } }],
-          responses: { '200': { description: 'Revoked or deleted' } },
         },
       },
       '/api/v1/upload/init': {

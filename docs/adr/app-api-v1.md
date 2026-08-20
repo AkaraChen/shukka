@@ -11,7 +11,7 @@
 3. **实例级仍分离**（仅 session）：setup / login / logout / session / password、列与创建 app、存储探测、该 app 的 API key CRUD。
 4. **对外标识**：slug、channel name、version 字符串。表内整数 PK 仅作 FK。面板路由改为 `/apps/{appSlug}`。
 5. **Channel name**：`^[a-z0-9][a-z0-9_-]{0,62}$`（收紧既有规则：去掉 `.`，保留数字与 `_`）。非法名 `invalid_request`。
-6. **OpenAPI** 描述 v1 契约（含公开 feed/notes 与 key/session 差异）；面板以独立 **`/docs`** 路由用 ReDoc 整页渲染，无面板 chrome，会话认证后可见；app 详情与 Integration 的 HTTP API 方式以新浏览器标签打开该路由。不嵌进 Integration，不单独做未登录站点。
+6. **OpenAPI** 描述 v1 契约中 API key（或 session）可调用的操作，以及公开 feed/notes；session-only 管理操作（删 app、API key 生命周期、实例级路由）不在公开 API 文档中。面板以独立 **`/docs`** 路由整页渲染，无面板 chrome，会话认证后可见；渲染方式见 `docs/adr/docs-renderer.md`（自建 HTML 模板 + cheerio 内联本地 redoc bundle，`Redoc.init` 以 specUrl 同源 fetch `/api/v1/openapi.json`）。app 详情与 Integration 的 HTTP API 方式以新浏览器标签打开该路由。不嵌进 Integration，不单独做未登录站点。
 
 ## Alternatives
 

@@ -55,7 +55,8 @@ Out of scope until explicitly specified: anything not yet accepted in a PRD.
 - 鉴权：session 或绑定该 slug 的 API key（`requireAppActor`）。Key 可改该 app 设置、CRUD channel / version / note、设 `currentVersion`、读详情与趋势。Key 不可删 app、不可管理 API key。
 - `PATCH .../channels/{channel}` 设 `currentVersion`：目标为 draft 时在同一事务写入 `releasedAt` 再切指针（promote）；目标为已发布版本则只切指针（回滚）。
 - 实例级（列/建 app、登录改密、存储探测）与 API key CRUD 仅 session，不在 key 能力面。
-- 面板 app 详情 **API docs** 入口打开 `/docs`：整页只有 ReDoc，无侧栏与顶栏（admin / developer）。点击在新浏览器标签打开，当前页标签不切换。未登录重定向到登录。Integration 的 HTTP API 接入说明提供同样打开新标签的按钮。
+- 公开 API 文档（`/api/v1/openapi.json`，经 `/docs` 渲染）只展示 API key（或 session）可调用的操作与公开 feed/notes；session-only 管理操作（删 app、API key 生命周期、实例级路由）不在文档中。
+- 面板 app 详情 **API docs** 入口打开 `/docs`：server route 用 cheerio 把本地 `redoc` standalone bundle 内联进自建 HTML 模板，`Redoc.init` 以 `specUrl` 让浏览器同源 fetch `/api/v1/openapi.json`（带 session cookie），整页无侧栏与顶栏（admin / developer）。HTML 静态、与 origin 无关，进程内组装一次缓存。点击在新浏览器标签打开，当前页标签不切换。未登录重定向到登录。Integration 的 HTTP API 接入说明提供同样打开新标签的按钮。
 - 制品字节永不经过 Shukka 进程（上传直传 S3，下载 302）。
 - 错误响应统一为 `{ error, message }`，`error` 取自固定码集：`unauthorized`、`forbidden`、`not_found`、`conflict`、`invalid_request`、`storage_error`、`metadata_error`。
 
