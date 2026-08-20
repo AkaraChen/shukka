@@ -94,8 +94,9 @@ npm run db:generate # regenerate migrations after editing src/db/schema.ts
 
 The GitHub Action is a JavaScript action (`using: node24`) so it does not need
 bash — Windows self-hosted runners with only MinGit work. It is linted with
-[actionlint](https://github.com/rhysd/actionlint) and exercised end to end on
-Ubuntu and Windows runners against MinIO; see `.github/workflows/action-test.yml`.
+[actionlint](https://github.com/rhysd/actionlint). Ubuntu CI matrices MinIO and
+the JuiceFS S3 gateway; Windows action e2e stays on MinIO. See
+`.github/workflows/ci.yml` and `.github/workflows/action-test.yml`.
 
 ## Documentation
 
