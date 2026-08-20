@@ -26,4 +26,5 @@ Shukka 的 Tauri feed 是生成的静态 `platforms` JSON，`url` 为 302 到存
 
 - 不覆盖 `install`。那一步失败不表示 feed 坏了。
 - 首次 `cargo build` 要几分钟并需要本机 Rust；CI 用 `dtolnay/rust-toolchain` + 缓存。
+- `tauri::generate_context!()` 在编译期要求 `frontendDist` 路径存在。e2e 应用无真实前端，用 `tests/e2e/tauri-app/frontend/index.html` 占位；不能叫 `dist`（根 `.gitignore` 会忽略）。
 - plugin 主版本若改 JSON 字段或 target 名，e2e 会红——这是要的。

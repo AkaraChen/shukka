@@ -139,6 +139,13 @@ try {
     await writeFile(join(workRoot, 'pubkey.txt'), `${pubkey}\n`)
   }
 
+  // generate_context! refuses to compile if frontendDist is missing. The app
+  // is headless; the stub is only there so the proc macro can resolve the path.
+  // Root .gitignore lists `dist`, so this directory cannot be named that.
+  const frontendDist = join(here, 'tauri-app/frontend')
+  await mkdir(frontendDist, { recursive: true })
+  await writeFile(join(frontendDist, 'index.html'), '<!doctype html><title>shukka-e2e</title>\n')
+
   process.stdout.write('Building Tauri e2e client (first cargo run may take a few minutes)\n')
   await run('cargo', ['build', '--offline'], {
     cwd: tauriDir,
