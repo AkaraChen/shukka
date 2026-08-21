@@ -124,6 +124,15 @@ jobs:
           E2E_VERSION: ${{ steps.publish.outputs.version }}
           ELECTRON_DISABLE_SANDBOX: '1'
 
+      - name: electron-updater rollback
+        run: xvfb-run -a node tests/e2e/run-rollback.mjs
+        env:
+          SHUKKA_URL: ${{ env.SHUKKA_URL }}
+          SHUKKA_API_KEY: ${{ steps.provision.outputs.api-key }}
+          SHUKKA_APP: demo-app
+          SHUKKA_CHANNEL: stable
+          ELECTRON_DISABLE_SANDBOX: '1'
+
   publish-windows:
     name: Publish on Windows
     runs-on: windows-latest
@@ -183,6 +192,15 @@ jobs:
           SHUKKA_CHANNEL: stable
           E2E_SKIP_PUBLISH: '1'
           E2E_VERSION: ${{ steps.publish.outputs.version }}
+          ELECTRON_DISABLE_SANDBOX: '1'
+
+      - name: electron-updater rollback
+        run: node tests/e2e/run-rollback.mjs
+        env:
+          SHUKKA_URL: ${{ env.SHUKKA_URL }}
+          SHUKKA_API_KEY: ${{ steps.provision.outputs.api-key }}
+          SHUKKA_APP: demo-app
+          SHUKKA_CHANNEL: stable
           ELECTRON_DISABLE_SANDBOX: '1'
 
   tauri-updater:

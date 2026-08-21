@@ -70,6 +70,7 @@
 - [x] promote 后 `releasedAt` 有值且此后删除 current 指针不会把它变回 draft。
 - [x] 面板 content 角色无 promote 入口；admin / developer 有。
 - [x] Action / 上传脚本 / skill 文档与 `release` 默认 false 一致。
+- [x] 连续发布两个版本后把 `currentVersion` 指回旧已发布版本：feed 与宿主平台 electron-updater 看到旧版本；被切走的已发布制品仍按文件名 302。
 
 ## Resolved product decisions
 
