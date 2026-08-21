@@ -57,6 +57,7 @@ describe('dictionaries', () => {
       'invalid_request',
       'storage_error',
       'metadata_error',
+      'rate_limited',
       'internal_error',
     ] as const
     for (const code of codes) {

@@ -13,7 +13,7 @@ export const Route = createFileRoute('/api/admin/password')({
         const parsed = bodySchema.safeParse(await request.json().catch(() => null))
         if (!parsed.success) throw new ShukkaError('invalid_request', 'New password must be at least 8 characters')
         const token = changePassword(parsed.data.currentPassword, parsed.data.newPassword)
-        return Response.json({ ok: true }, { headers: { 'set-cookie': sessionCookieHeader(token) } })
+        return Response.json({ ok: true }, { headers: { 'set-cookie': sessionCookieHeader(token, request) } })
       }),
     },
   },

@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { handle, textParam } from '~/lib/errors.ts'
+import { ShukkaError, handle, safeDecodeURIComponent, textParam } from '~/lib/errors.ts'
 import { serveFeedRequest } from '~/server/feed.ts'
 
 /**
@@ -10,7 +10,8 @@ export const Route = createFileRoute('/api/update/$appSlug/$channel/$')({
   server: {
     handlers: {
       GET: handle(async ({ request, params }) => {
-        const filename = decodeURIComponent(params._splat ?? '')
+        const filename = safeDecodeURIComponent(params._splat ?? '')
+        if (filename === null) throw new ShukkaError('not_found', 'Not found')
         return serveFeedRequest(request, textParam(params, 'appSlug'), textParam(params, 'channel'), filename)
       }),
     },

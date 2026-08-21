@@ -2,7 +2,7 @@ import { and, eq, isNull, lt } from 'drizzle-orm'
 import { db } from '~/db/index.ts'
 import { admin, apiKeys, apps, sessions } from '~/db/schema.ts'
 import { hashPassword, randomToken, sha256, verifyPassword } from './crypto.ts'
-import { ShukkaError } from './errors.ts'
+import { ShukkaError, safeDecodeURIComponent } from './errors.ts'
 import type { App } from '~/db/schema.ts'
 
 export const SESSION_COOKIE = 'shukka_session'
@@ -71,17 +71,39 @@ export function readSessionCookie(request: Request): string | null {
   if (!header) return null
   for (const part of header.split(';')) {
     const [name, ...rest] = part.trim().split('=')
-    if (name === SESSION_COOKIE) return decodeURIComponent(rest.join('='))
+    if (name === SESSION_COOKIE) return safeDecodeURIComponent(rest.join('='))
   }
   return null
 }
 
-export function sessionCookieHeader(token: string, maxAge = SESSION_TTL_SECONDS): string {
-  return `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}`
+export type CookieSecureSource = Request | { secure?: boolean }
+
+export function cookieShouldBeSecure(source: CookieSecureSource): boolean {
+  const flag = process.env.SHUKKA_SECURE_COOKIES
+  if (flag === '1' || flag === 'true') return true
+  if (source instanceof Request) {
+    if (new URL(source.url).protocol === 'https:') return true
+    const proto = source.headers.get('x-forwarded-proto')?.split(',')[0]?.trim()
+    return proto === 'https'
+  }
+  return source.secure === true
 }
 
-export function clearSessionCookieHeader(): string {
-  return `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`
+function sessionCookieFlags(source: CookieSecureSource, maxAge: number): string {
+  const secure = cookieShouldBeSecure(source) ? '; Secure' : ''
+  return `Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secure}`
+}
+
+export function sessionCookieHeader(
+  token: string,
+  source: CookieSecureSource = {},
+  maxAge = SESSION_TTL_SECONDS,
+): string {
+  return `${SESSION_COOKIE}=${token}; ${sessionCookieFlags(source, maxAge)}`
+}
+
+export function clearSessionCookieHeader(source: CookieSecureSource = {}): string {
+  return `${SESSION_COOKIE}=; ${sessionCookieFlags(source, 0)}`
 }
 
 /** Throws unless the request carries a valid admin session. */
