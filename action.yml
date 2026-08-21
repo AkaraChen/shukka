@@ -1,6 +1,6 @@
 name: 'Shukka Publish'
-description: 'Publish an electron-builder output directory to a Shukka update channel'
-author: 'akarachen'
+description: 'Publish an electron-builder or Tauri output directory to a Shukka update channel'
+author: 'shukka-app'
 branding:
   icon: 'upload-cloud'
   color: 'blue'
@@ -20,11 +20,11 @@ inputs:
     required: false
     default: 'stable'
   directory:
-    description: 'electron-builder output directory containing artifacts and latest*.yml'
+    description: 'electron-builder or Tauri output directory containing artifacts and latest*.yml or latest.json'
     required: false
     default: 'dist'
   version:
-    description: 'Release version; read from the .yml metadata when omitted'
+    description: 'Release version; read from latest*.yml or latest.json when omitted'
     required: false
     default: ''
   create-channel:

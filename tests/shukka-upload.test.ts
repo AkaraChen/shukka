@@ -32,32 +32,48 @@ describe('collectFiles', () => {
   })
 })
 
+function mockExit() {
+  const exit = vi.spyOn(process, 'exit').mockImplementation(((code?: string | number | null) => {
+    throw new Error(`process.exit(${code})`)
+  }) as never)
+  const write = vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+  return {
+    write,
+    restore() {
+      exit.mockRestore()
+      write.mockRestore()
+    },
+  }
+}
+
 describe('versionFromMetadata', () => {
-  it('reads version: 1.2.3 from yml', async () => {
+  it('reads version: 2.0.0 from yml', async () => {
     const directory = tempDir()
     const path = join(directory, 'latest.yml')
-    writeFileSync(path, 'version: 1.2.3\nfiles:\n  - url: App.exe\n')
+    writeFileSync(path, 'version: 2.0.0\nfiles:\n  - url: App.exe\n')
 
-    await expect(versionFromMetadata([{ filename: 'latest.yml', path }])).resolves.toBe('1.2.3')
+    await expect(versionFromMetadata([{ filename: 'latest.yml', path }])).resolves.toBe('2.0.0')
   })
 
-  it('fails today when the directory only has latest.json', async () => {
+  it('reads version from latest.json when no yml is present', async () => {
     const directory = tempDir()
     const path = join(directory, 'latest.json')
-    writeFileSync(path, '{"version":"1.2.3"}')
+    writeFileSync(path, '{"version":"1.4.2","platforms":{}}')
 
-    const exit = vi.spyOn(process, 'exit').mockImplementation(((code?: string | number | null) => {
-      throw new Error(`process.exit(${code})`)
-    }) as never)
-    const write = vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    await expect(versionFromMetadata([{ filename: 'latest.json', path }])).resolves.toBe('1.4.2')
+  })
 
-    await expect(versionFromMetadata([{ filename: 'latest.json', path }])).rejects.toThrow(/process\.exit\(1\)/)
-    expect(write).toHaveBeenCalledWith(
-      expect.stringContaining('No electron-updater .yml metadata file found in the directory'),
+  it('fails with a clear message when the directory has no metadata', async () => {
+    const exit = mockExit()
+
+    await expect(versionFromMetadata([{ filename: 'App.exe', path: '/tmp/App.exe' }])).rejects.toThrow(
+      /process\.exit\(1\)/,
+    )
+    expect(exit.write).toHaveBeenCalledWith(
+      expect.stringMatching(/latest\*\.yml.*latest\.json|latest\.json.*latest\*\.yml/),
     )
 
-    exit.mockRestore()
-    write.mockRestore()
+    exit.restore()
   })
 })
 

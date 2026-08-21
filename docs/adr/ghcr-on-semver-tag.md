@@ -18,6 +18,7 @@ Accepted
 
 ## Alternatives
 
+- **只发 `latest`**：运维无法钉死 `{version}`，回滚只能赌 registry 里还留着旧 digest。
 - **独立 `publish-image.yml` 只在 tag 上跑、只发 amd64**：和现有 Docker workflow 抢 `latest`，正式版镜像变成单架构。
 - **`release: published` 触发**：比 `git push --tags` 多一道 GitHub Release UI。
 - **本机脚本 / `docker buildx bake`**：没有标签即发布的门闩，也没有 `GITHUB_TOKEN` 路径。

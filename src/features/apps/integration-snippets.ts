@@ -51,7 +51,7 @@ autoUpdater.checkForUpdatesAndNotify()`,
     },
     githubAction: {
       lang: 'yaml',
-      code: `- uses: akarachen/shukka@main
+      code: `- uses: shukka-app/shukka@v1.0.2
   with:
     server-url: \${{ secrets.SHUKKA_URL }}
     api-key: \${{ secrets.SHUKKA_API_KEY }}
@@ -75,12 +75,15 @@ curl -X PUT --data-binary @latest.yml "<uploadUrl from init>"
 curl -X POST ${serverUrl}/api/v1/upload/finalize \\
   -H "Authorization: Bearer $SHUKKA_API_KEY" \\
   -H "content-type: application/json" \\
-  -d '{"uploadId":"<uploadId>","app":"${app.slug}"}'`,
+  -d '{"uploadId":"<uploadId>","app":"${app.slug}"}'
+
+# Release notes (public, no auth) — only if the app enabled Release log
+curl "${serverUrl}/api/v1/apps/${app.slug}/channels/${channelName}/notes?from=1.0.0&locale=en-US"`,
     },
     agentCli: {
       lang: 'bash',
       code: `# Installs the Shukka publish skill into your coding agent (Claude Code, Cursor, Codex, ...)
-npx skills add https://github.com/akarachen/shukka/archive/${skillRef}.tar.gz --skill shukka-publish`,
+npx skills add https://github.com/shukka-app/shukka/archive/${skillRef}.tar.gz --skill shukka-publish`,
     },
   }
 }
@@ -118,7 +121,7 @@ if (update) {
     },
     githubAction: {
       lang: 'yaml',
-      code: `- uses: akarachen/shukka@main
+      code: `- uses: shukka-app/shukka@v1.0.2
   with:
     server-url: \${{ secrets.SHUKKA_URL }}
     api-key: \${{ secrets.SHUKKA_API_KEY }}
@@ -142,12 +145,15 @@ curl -X PUT --data-binary @latest.json "<uploadUrl from init>"
 curl -X POST ${serverUrl}/api/v1/upload/finalize \\
   -H "Authorization: Bearer $SHUKKA_API_KEY" \\
   -H "content-type: application/json" \\
-  -d '{"uploadId":"<uploadId>","app":"${app.slug}"}'`,
+  -d '{"uploadId":"<uploadId>","app":"${app.slug}"}'
+
+# Release notes (public, no auth) — only if the app enabled Release log
+curl "${serverUrl}/api/v1/apps/${app.slug}/channels/${channelName}/notes?from=1.0.0&locale=en-US"`,
     },
     agentCli: {
       lang: 'bash',
       code: `# Installs the Shukka publish skill into your coding agent (Claude Code, Cursor, Codex, ...)
-npx skills add https://github.com/akarachen/shukka/archive/${skillRef}.tar.gz --skill shukka-publish`,
+npx skills add https://github.com/shukka-app/shukka/archive/${skillRef}.tar.gz --skill shukka-publish`,
     },
   }
 }
