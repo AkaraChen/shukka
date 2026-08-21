@@ -1,4 +1,4 @@
-import { and, desc, eq, isNotNull, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNotNull, sql } from 'drizzle-orm'
 import { randomToken } from '~/lib/crypto.ts'
 import { db } from '~/db/index.ts'
 import { artifacts, channels, pendingUploads, versions } from '~/db/schema.ts'
@@ -229,6 +229,16 @@ export async function finalizeUpload(
 
 export function listArtifacts(versionId: number) {
   return db.select().from(artifacts).where(eq(artifacts.versionId, versionId)).orderBy(artifacts.filename).all()
+}
+
+export function listArtifactsForVersions(versionIds: number[]) {
+  if (versionIds.length === 0) return []
+  return db
+    .select()
+    .from(artifacts)
+    .where(inArray(artifacts.versionId, versionIds))
+    .orderBy(artifacts.filename)
+    .all()
 }
 
 export async function deleteVersionByName(app: App, channelName: string, version: string): Promise<void> {

@@ -25,8 +25,11 @@ const { eq } = await import('drizzle-orm')
 const { db } = await import('~/db/index.ts')
 const { apps, pendingUploads, versions } = await import('~/db/schema.ts')
 const { createApp, DEFAULT_CHANNEL } = await import('~/server/apps.ts')
-const { createChannel, deleteChannel, getChannel } = await import('~/server/channels.ts')
-const { deleteVersion, finalizeUpload, initUpload } = await import('~/server/releases.ts')
+const { createChannel, deleteChannel, getChannel, listChannelsForApps, listVersionsForChannels } =
+  await import('~/server/channels.ts')
+const { deleteVersion, finalizeUpload, initUpload, listArtifactsForVersions } = await import('~/server/releases.ts')
+const { clearObjectCache } = await import('~/lib/object-cache.ts')
+const { appDetail, appSummaries } = await import('~/server/dashboard.ts')
 const { resolveFeedRequest } = await import('~/server/feed.ts')
 const { ShukkaError } = await import('~/lib/errors.ts')
 const { deleteObjects, isS3NotFound } = await import('~/lib/storage.ts')
@@ -62,6 +65,10 @@ async function publish(app: Awaited<ReturnType<typeof createApp>>, channel: stri
   }
   return { init, result: await finalizeUpload(app, init.uploadId, { release: true }), installer }
 }
+
+beforeEach(() => {
+  clearObjectCache()
+})
 
 describe('release flow', () => {
   beforeEach(() => {
@@ -441,5 +448,68 @@ describe('metadata consistency', () => {
     objects.set(init.files[1].key, 'binary')
 
     await expect(finalizeUpload(app, init.uploadId)).rejects.toThrow(/were not uploaded/)
+  })
+})
+
+describe('dashboard appDetail shape', () => {
+  beforeEach(() => {
+    db.delete(apps).run()
+    objects.clear()
+  })
+
+  it('returns empty results for empty id batches without querying', () => {
+    expect(listChannelsForApps([])).toEqual([])
+    expect(listVersionsForChannels([])).toEqual([])
+    expect(listArtifactsForVersions([])).toEqual([])
+  })
+
+  it('keeps channel, version, and artifact counts and currentVersion after batching', async () => {
+    const app = await createApp(appInput)
+    createChannel(app.id, 'beta')
+    await publish(app, 'stable', '1.0.0')
+    await publish(app, 'beta', '2.0.0')
+
+    const detail = appDetail(app.id, ORIGIN)
+    // Recorded from appDetail before the batch rewrite (two channels, one version each).
+    expect(detail.channels).toHaveLength(2)
+    expect(detail.channels.map((channel) => channel.name)).toEqual(['stable', 'beta'])
+    expect(detail.channels.map((channel) => channel.versions.length)).toEqual([1, 1])
+    expect(detail.channels.map((channel) => channel.versions[0]?.artifacts.length)).toEqual([2, 2])
+    expect(detail.channels.map((channel) => channel.versions[0]?.version)).toEqual(['1.0.0', '2.0.0'])
+    expect(detail.channels.map((channel) => channel.versions[0]?.isCurrent)).toEqual([true, true])
+    expect(detail.channels.map((channel) => channel.currentVersionId)).toEqual(
+      detail.channels.map((channel) => channel.versions[0]?.id),
+    )
+    expect(detail.channels[0]?.versions[0]?.artifacts.map((artifact) => artifact.filename)).toEqual([
+      'Acme-Setup-1.0.0.exe',
+      'latest.yml',
+    ])
+    expect(detail.channels[1]?.versions[0]?.artifacts.map((artifact) => artifact.filename)).toEqual([
+      'Acme-Setup-2.0.0.exe',
+      'latest.yml',
+    ])
+    expect(detail.channels[0]?.feedUrl).toBe(`${ORIGIN}/api/update/acme/stable`)
+    expect(detail).toHaveProperty('keys')
+
+    const withoutKeys = appDetail(app.id, ORIGIN, { includeKeys: false })
+    expect(withoutKeys).not.toHaveProperty('keys')
+    expect(withoutKeys.channels.map((channel) => channel.name)).toEqual(['stable', 'beta'])
+
+    const summaries = appSummaries()
+    expect(summaries).toHaveLength(1)
+    expect(summaries[0]?.channels.map((channel) => ({ name: channel.name, currentVersion: channel.currentVersion }))).toEqual([
+      { name: 'stable', currentVersion: '1.0.0' },
+      { name: 'beta', currentVersion: '2.0.0' },
+    ])
+  })
+
+  it('does not crash for an app with a channel and zero versions', async () => {
+    const app = await createApp(appInput)
+    const detail = appDetail(app.id, ORIGIN)
+    expect(detail.channels).toHaveLength(1)
+    expect(detail.channels[0]?.name).toBe('stable')
+    expect(detail.channels[0]?.versions).toEqual([])
+    expect(detail.channels[0]?.currentVersionId).toBeNull()
+    expect(appSummaries()[0]?.channels).toEqual([{ id: detail.channels[0]?.id, name: 'stable', currentVersion: null }])
   })
 })

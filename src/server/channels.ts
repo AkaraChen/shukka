@@ -1,4 +1,4 @@
-import { and, desc, eq, isNotNull } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNotNull } from 'drizzle-orm'
 import { db } from '~/db/index.ts'
 import { artifacts, channels, versions } from '~/db/schema.ts'
 import { ShukkaError } from '~/lib/errors.ts'
@@ -16,6 +16,16 @@ export function assertChannelName(name: string): void {
 export function listChannels(appId: number): Channel[] {
   // Creation order keeps the default channel first.
   return db.select().from(channels).where(eq(channels.appId, appId)).orderBy(channels.createdAt, channels.id).all()
+}
+
+export function listChannelsForApps(appIds: number[]): Channel[] {
+  if (appIds.length === 0) return []
+  return db
+    .select()
+    .from(channels)
+    .where(inArray(channels.appId, appIds))
+    .orderBy(channels.createdAt, channels.id)
+    .all()
 }
 
 export function getChannel(appId: number, name: string): Channel {
@@ -63,6 +73,16 @@ export function listVersions(channelId: number) {
     .select()
     .from(versions)
     .where(eq(versions.channelId, channelId))
+    .orderBy(desc(versions.createdAt), desc(versions.id))
+    .all()
+}
+
+export function listVersionsForChannels(channelIds: number[]) {
+  if (channelIds.length === 0) return []
+  return db
+    .select()
+    .from(versions)
+    .where(inArray(versions.channelId, channelIds))
     .orderBy(desc(versions.createdAt), desc(versions.id))
     .all()
 }
