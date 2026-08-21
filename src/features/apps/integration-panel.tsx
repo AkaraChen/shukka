@@ -51,7 +51,7 @@ Facts:
 - Update feed (public, no auth): ${feedUrl}
 - Channel: ${channelName}
 - App slug: ${app.slug}
-- Publishing goes through the Shukka GitHub Action (akarachen/shukka@main) with repository secrets SHUKKA_URL (my Shukka base URL) and SHUKKA_API_KEY (I will create it in the panel and add it to the repo myself — never ask me to paste it into code).
+- Publishing goes through the Shukka GitHub Action (shukka-app/shukka@v1.0.2) with repository secrets SHUKKA_URL (my Shukka base URL) and SHUKKA_API_KEY (I will create it in the panel and add it to the repo myself — never ask me to paste it into code).
 
 Do all of the following:
 1. In tauri.conf, set plugins.updater.endpoints to the feed URL above (the channel-root URL, not a latest.json path).
@@ -64,7 +64,7 @@ Facts:
 - Update feed (public, no auth): ${feedUrl}
 - Channel: ${channelName}
 - App slug: ${app.slug}
-- Publishing goes through the Shukka GitHub Action (akarachen/shukka@main) with repository secrets SHUKKA_URL (my Shukka base URL) and SHUKKA_API_KEY (I will create it in the panel and add it to the repo myself — never ask me to paste it into code).
+- Publishing goes through the Shukka GitHub Action (shukka-app/shukka@v1.0.2) with repository secrets SHUKKA_URL (my Shukka base URL) and SHUKKA_API_KEY (I will create it in the panel and add it to the repo myself — never ask me to paste it into code).
 
 Do all of the following:
 1. In electron-builder config, set publish to the generic provider pointing at the feed URL above. Do not set publish.channel — the feed URL already includes the Shukka channel.
