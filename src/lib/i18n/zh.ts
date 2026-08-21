@@ -282,6 +282,7 @@ export const zh = {
     invalid_request: '请求无效——请检查输入后重试。',
     storage_error: '无法访问存储——请检查存储桶、endpoint 与凭据。',
     metadata_error: '更新元数据校验失败。',
+    rate_limited: '登录尝试次数过多，请稍后再试。',
     internal_error: '服务器出现未知错误。',
   },
 } satisfies Dictionary

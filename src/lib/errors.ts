@@ -7,6 +7,7 @@ export type ShukkaErrorCode =
   | 'invalid_request'
   | 'storage_error'
   | 'metadata_error'
+  | 'rate_limited'
 
 const statusByCode: Record<ShukkaErrorCode, number> = {
   unauthorized: 401,
@@ -16,6 +17,7 @@ const statusByCode: Record<ShukkaErrorCode, number> = {
   invalid_request: 400,
   storage_error: 502,
   metadata_error: 422,
+  rate_limited: 429,
 }
 
 export class ShukkaError extends Error {
@@ -39,8 +41,8 @@ export function jsonError(error: unknown): Response {
       { status: error.status },
     )
   }
-  const message = error instanceof Error ? error.message : 'Unexpected error'
-  return Response.json({ error: 'internal_error', message }, { status: 500 })
+  console.error(error)
+  return Response.json({ error: 'internal_error', message: 'Unexpected error' }, { status: 500 })
 }
 
 /** The subset of the server-route handler context Shukka handlers use. */
@@ -57,6 +59,16 @@ export function handle(fn: (ctx: HandlerContext) => Promise<Response>) {
     } catch (error) {
       return jsonError(error)
     }
+  }
+}
+
+/** Returns null on malformed percent-encoding instead of throwing URIError. */
+export function safeDecodeURIComponent(value: string): string | null {
+  try {
+    return decodeURIComponent(value)
+  } catch (error) {
+    if (error instanceof URIError) return null
+    throw error
   }
 }
 

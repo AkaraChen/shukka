@@ -298,6 +298,7 @@ export const en = {
     invalid_request: 'Invalid request — check the fields and try again.',
     storage_error: 'Could not reach storage — check the bucket, endpoint and credentials.',
     metadata_error: 'The update metadata failed validation.',
+    rate_limited: 'Too many login attempts. Try again later.',
     internal_error: 'Unexpected server error.',
   },
 }
