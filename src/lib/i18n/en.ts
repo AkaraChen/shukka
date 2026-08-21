@@ -286,6 +286,9 @@ export const en = {
     updated: "Password updated — you're still signed in on this session.",
     updateFailed: 'Update failed',
     changing: 'Changing…',
+    about: 'About',
+    version: (version: string) => `Version ${version}`,
+    github: 'GitHub',
   },
   errors: {
     unauthorized: 'Incorrect password or credentials.',
