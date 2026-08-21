@@ -30,9 +30,9 @@
 ### 维护者：发一个正式版
 
 1. 确认要发布的 commit 已在 `main` 且 CI 绿。
-2. 打标签并推送，例如 `git tag v0.1.0 && git push origin v0.1.0`。
-3. `Docker` workflow 构建、推送；GHCR 上出现 `0.1.0`、`0.1`、`latest`（major 为 0 时不打 `0`）。
-4. 运维 `docker pull ghcr.io/shukka-app/shukka:0.1.0` 或未加 tag（即 `latest`）。
+2. 打标签并推送，例如 `git tag v1.0.1 && git push origin v1.0.1`。
+3. `Docker` workflow 构建、推送；GHCR 上出现 `1.0.1`、`1.0`、`1`、`latest`（major 为 0 时不打 `{major}`）。
+4. 运维 `docker pull ghcr.io/shukka-app/shukka:1.0.1` 或未加 tag（即 `latest`）。
 
 ### 维护者：发预发布
 
