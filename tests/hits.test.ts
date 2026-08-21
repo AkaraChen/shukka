@@ -24,6 +24,8 @@ vi.mock('~/lib/storage.ts', async (importOriginal) => {
 const { and, eq, sql } = await import('drizzle-orm')
 const { db } = await import('~/db/index.ts')
 const { apps, hitBuckets, versions } = await import('~/db/schema.ts')
+const { getObjectText } = await import('~/lib/storage.ts')
+const { clearObjectCache } = await import('~/lib/object-cache.ts')
 const { createApp } = await import('~/server/apps.ts')
 const { createChannel, deleteChannel, getChannel } = await import('~/server/channels.ts')
 const { deleteVersion, finalizeUpload, initUpload } = await import('~/server/releases.ts')
@@ -77,6 +79,10 @@ function bucketSum(versionId: number, kind: 'metadata' | 'artifact'): number {
   return row?.total ?? 0
 }
 
+beforeEach(() => {
+  clearObjectCache()
+})
+
 describe('hit buckets', () => {
   beforeEach(() => {
     db.delete(apps).run()
@@ -104,6 +110,20 @@ describe('hit buckets', () => {
 
     const rows = db.select().from(hitBuckets).where(eq(hitBuckets.versionId, result.versionId)).all()
     expect(rows.map((row) => row.hourStart).sort((a, b) => a - b)).toEqual([NOW - HOUR, NOW])
+  })
+
+  it('reads latest.yml from S3 once across two feed checks and still records both hits', async () => {
+    const app = await createApp(appInput)
+    const { result } = await publish(app, 'stable', '1.0.0')
+    vi.mocked(getObjectText).mockClear()
+
+    await resolveFeedRequest('acme', 'stable', 'latest.yml', ORIGIN)
+    await resolveFeedRequest('acme', 'stable', 'latest.yml', ORIGIN)
+
+    expect(getObjectText).toHaveBeenCalledTimes(1)
+    const row = db.select().from(versions).where(eq(versions.id, result.versionId)).get()
+    expect(row?.metadataHits).toBe(2)
+    expect(row?.metadataHits).toBe(bucketSum(result.versionId, 'metadata'))
   })
 
   it('keeps version counters equal to the sum of their buckets through the feed path', async () => {

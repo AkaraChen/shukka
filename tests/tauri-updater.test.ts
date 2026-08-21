@@ -22,6 +22,7 @@ vi.mock('~/lib/storage.ts', async (importOriginal) => {
 
 const { db } = await import('~/db/index.ts')
 const { apps } = await import('~/db/schema.ts')
+const { clearObjectCache } = await import('~/lib/object-cache.ts')
 const { createApp } = await import('~/server/apps.ts')
 const { finalizeUpload, initUpload } = await import('~/server/releases.ts')
 const { resolveFeedRequest } = await import('~/server/feed.ts')
@@ -54,6 +55,10 @@ async function publishTauri(
   }
   return finalizeUpload(app, init.uploadId, { release: true })
 }
+
+beforeEach(() => {
+  clearObjectCache()
+})
 
 describe('updater kind on create', () => {
   beforeEach(() => {

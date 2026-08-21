@@ -2,6 +2,7 @@ import { and, eq, isNotNull } from 'drizzle-orm'
 import { db } from '~/db/index.ts'
 import { artifacts, versions } from '~/db/schema.ts'
 import { ShukkaError } from '~/lib/errors.ts'
+import { cachedText } from '~/lib/object-cache.ts'
 import { getObjectText, presignGet, settingsFromApp } from '~/lib/storage.ts'
 import { getAppBySlug } from './apps.ts'
 import { getChannel } from './channels.ts'
@@ -43,7 +44,7 @@ export async function resolveFeedRequest(
       releasedAt: current.releasedAt,
       version: current.version,
       artifacts: currentArtifacts,
-      getText: (key) => getObjectText(s3, key),
+      getText: (key) => cachedText(`s3:${app.id}:${key}`, () => getObjectText(s3, key)),
     })
     if (generated) {
       recordHit(current.id, 'metadata')
@@ -54,7 +55,7 @@ export async function resolveFeedRequest(
   if (adapter.isMetadataFile(filename)) {
     const artifact = currentArtifacts.find((entry) => entry.filename === filename)
     if (!artifact) throw new ShukkaError('not_found', `${filename} is not part of the current release`)
-    const body = await getObjectText(s3, artifact.s3Key)
+    const body = await cachedText(`s3:${app.id}:${artifact.s3Key}`, () => getObjectText(s3, artifact.s3Key))
     recordHit(current.id, 'metadata')
     return { kind: 'document', contentType: 'text/yaml; charset=utf-8', body }
   }
