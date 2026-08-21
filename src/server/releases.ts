@@ -2,7 +2,7 @@ import { and, desc, eq, isNotNull, sql } from 'drizzle-orm'
 import { randomToken } from '~/lib/crypto.ts'
 import { db } from '~/db/index.ts'
 import { artifacts, channels, pendingUploads, versions } from '~/db/schema.ts'
-import { ShukkaError } from '~/lib/errors.ts'
+import { isUniqueConstraint, ShukkaError } from '~/lib/errors.ts'
 import { deleteObjects, getObjectText, headObject, objectKey, presignPut, settingsFromApp } from '~/lib/storage.ts'
 import { createChannel, getChannel, getVersion } from './channels.ts'
 import { adapterFor } from './updaters/index.ts'
@@ -78,16 +78,33 @@ export async function initUpload(app: App, input: InitInput): Promise<InitResult
   const uploadId = randomToken(16)
   const expiresAt = nowSeconds() + PENDING_TTL_SECONDS
   db.delete(pendingUploads).where(sql`${pendingUploads.expiresAt} < ${nowSeconds()}`).run()
-  db.insert(pendingUploads)
-    .values({
-      id: uploadId,
-      appId: app.id,
-      channelId: channel.id,
-      version: input.version,
-      files: JSON.stringify(pendingFiles),
-      expiresAt,
-    })
-    .run()
+
+  const livePending = db
+    .select()
+    .from(pendingUploads)
+    .where(and(eq(pendingUploads.channelId, channel.id), eq(pendingUploads.version, input.version)))
+    .get()
+  if (livePending) {
+    throw new ShukkaError('conflict', `Version ${input.version} already has a pending upload`)
+  }
+
+  try {
+    db.insert(pendingUploads)
+      .values({
+        id: uploadId,
+        appId: app.id,
+        channelId: channel.id,
+        version: input.version,
+        files: JSON.stringify(pendingFiles),
+        expiresAt,
+      })
+      .run()
+  } catch (error) {
+    if (isUniqueConstraint(error)) {
+      throw new ShukkaError('conflict', `Version ${input.version} already has a pending upload`)
+    }
+    throw error
+  }
 
   const files = await Promise.all(
     pendingFiles.map(async (file) => ({
@@ -162,37 +179,45 @@ export async function finalizeUpload(
 
   const now = nowSeconds()
   const release = options.release === true
-  const created = db.transaction((tx) => {
-    const version = tx
-      .insert(versions)
-      .values({
-        appId: app.id,
-        channelId: channel.id,
-        version: pending.version,
-        createdAt: now,
-        releasedAt: release ? now : null,
-      })
-      .returning()
-      .get()
+  let created
+  try {
+    created = db.transaction((tx) => {
+      const version = tx
+        .insert(versions)
+        .values({
+          appId: app.id,
+          channelId: channel.id,
+          version: pending.version,
+          createdAt: now,
+          releasedAt: release ? now : null,
+        })
+        .returning()
+        .get()
 
-    tx.insert(artifacts)
-      .values(
-        verified.map((file) => ({
-          versionId: version.id,
-          filename: file.filename,
-          s3Key: file.s3Key,
-          size: file.size,
-          kind: file.kind,
-        })),
-      )
-      .run()
+      tx.insert(artifacts)
+        .values(
+          verified.map((file) => ({
+            versionId: version.id,
+            filename: file.filename,
+            s3Key: file.s3Key,
+            size: file.size,
+            kind: file.kind,
+          })),
+        )
+        .run()
 
-    if (release) {
-      tx.update(channels).set({ currentVersionId: version.id }).where(eq(channels.id, channel.id)).run()
+      if (release) {
+        tx.update(channels).set({ currentVersionId: version.id }).where(eq(channels.id, channel.id)).run()
+      }
+      tx.delete(pendingUploads).where(eq(pendingUploads.id, uploadId)).run()
+      return version
+    })
+  } catch (error) {
+    if (isUniqueConstraint(error)) {
+      throw new ShukkaError('conflict', 'Version already exists')
     }
-    tx.delete(pendingUploads).where(eq(pendingUploads.id, uploadId)).run()
-    return version
-  })
+    throw error
+  }
 
   return {
     versionId: created.id,
