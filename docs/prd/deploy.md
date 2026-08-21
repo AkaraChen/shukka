@@ -18,7 +18,7 @@ Shukka 是单管理员自托管服务。仓库已有 `Dockerfile` 和 README 里
 
 ## Non-goals
 
-- 本 PRD 不改代码：不新增 Docker Compose、systemd unit 或 `SHUKKA_PUBLIC_URL`。健康探针与 GHCR 发布见 `docs/prd/health-endpoint.md`、`docs/prd/container-image.md`。
+- 本 PRD 不改运行时代码，也不发明 `SHUKKA_PUBLIC_URL`。Compose / Ansible 示例见 `docs/prd/deploy-examples.md`；健康探针与 GHCR 发布见 `docs/prd/health-endpoint.md`、`docs/prd/container-image.md`。
 - 不把 Shukka 做成多实例/HA，也不引入 Postgres。
 - 不写「如何把桌面应用接到 feed」——那是 shukka-ops，不是本机部署。
 - 不提供托管 SaaS。
@@ -50,6 +50,15 @@ docker run -d --name shukka --restart unless-stopped \
 
 公开镜像是 `ghcr.io/shukka-app/shukka`（semver 标签发布，见 `docs/prd/container-image.md`）。拉取失败时在仓库根 `docker build -t shukka .`。
 
+同一份编排在 `deploy/compose.yaml`（Shukka + 示例 MinIO）。钉版本用 `SHUKKA_IMAGE`：
+
+```bash
+docker compose -f deploy/compose.yaml up -d
+docker exec minio mkdir -p /data/releases
+```
+
+多机或重复安装用 `deploy/ansible/playbook.yml`（把上面的 Compose 拷到主机并等到 health）。Docker Compose v2 是前置条件。见 `docs/prd/deploy-examples.md`。
+
 ### 运维：从源码 + systemd
 
 需要 Node 24（与 CI / `Dockerfile` 一致）和能编译 `better-sqlite3` 原生绑定的环境。
@@ -75,7 +84,7 @@ Restart=on-failure
 
 ### 运维：本机 MinIO（可选）
 
-Shukka **不**随镜像带对象存储。需要自建 S3 时，另起 MinIO，再在面板创建 app（MinIO：填 endpoint、勾 path-style；向导默认 region `us-east-1`）。GitHub Actions 必须能从公网打到该 endpoint——presigned PUT 由 CI 直传，不经过 Shukka。仓库没有 `docker-compose.yml`；需要时自行把 Shukka 容器与 MinIO 写在同一份 compose 里，Shukka 仍只挂自己的数据卷。
+Shukka **不**随镜像带对象存储。需要自建 S3 时用 `deploy/compose.yaml` 里的 MinIO，或另起一个，再在面板创建 app（MinIO：填 endpoint、勾 path-style；向导默认 region `us-east-1`）。GitHub Actions 必须能从公网打到该 endpoint——presigned PUT 由 CI 直传，不经过 Shukka。Shukka 仍只挂自己的数据卷。
 
 `npm run juicefs` / `scripts/juicefs-dev.mjs` 只给本地开发当 S3 网关，不是生产部署方案。
 
@@ -169,7 +178,7 @@ curl -sS "$SHUKKA_URL/api/admin/session"
 | 形态 | 结论 |
 |------|------|
 | 单机 systemd（上一节） | 可行，等价于主路径减去容器 |
-| Compose：Shukka + 可选 MinIO | 可行；compose 需自写，MinIO 要对 CI/客户端可达 |
+| Compose：Shukka + 可选 MinIO | 可行；用 `deploy/compose.yaml`，MinIO 要对 CI/客户端可达 |
 | Fly.io / Railway / Render 等带持久盘的单实例 PaaS | 可以，必须挂持久卷到 `SHUKKA_DATA_DIR`，**副本数 = 1** |
 | 多副本 / 滚动两实例共用一块 SQLite | 不要 |
 | Vercel / Netlify / Cloudflare Workers / 无盘 Lambda | 不适合：文件系统短暂、`better-sqlite3` 原生绑定、SQLite 单写者 |
@@ -199,5 +208,5 @@ curl -sS "$SHUKKA_URL/api/admin/session"
 
 - 主路径是自建单机 Docker，不是 PaaS 优先。
 - 管理员密码只在面板首次设置，不从环境变量注入（与 `docs/adr/auth-model.md` 一致）。
-- 不在本轮加 compose 文件。健康探针与 GHCR 发布已另立 PRD。
+- Compose / Ansible 示例见 `docs/prd/deploy-examples.md`。健康探针与 GHCR 发布已另立 PRD。
 - Tauri 在反代后 origin 为 http 的问题按运行时限制记录，不发明 `SHUKKA_PUBLIC_URL`。

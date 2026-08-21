@@ -50,6 +50,19 @@ flowchart LR
 docker run -d --name shukka -p 3000:3000 -v shukka-data:/data ghcr.io/shukka-app/shukka
 ```
 
+Or the Compose example (Shukka + a local MinIO for the panel wizard):
+
+```bash
+docker compose -f deploy/compose.yaml up -d
+docker exec minio mkdir -p /data/releases
+```
+
+Ansible copies that same file onto a host and waits for `/api/health`:
+
+```bash
+ansible-playbook -i inventory.ini deploy/ansible/playbook.yml
+```
+
 Pushing a `vMAJOR.MINOR.PATCH` tag publishes that image to GitHub Packages. Pin a
 version with `ghcr.io/shukka-app/shukka:0.1.1` if you do not want `latest`.
 
@@ -73,7 +86,7 @@ Forgot the admin password: delete the singleton `admin` row (`id = 1`) and reope
 `/setup`. That is the ADR recovery path (`docs/adr/auth-model.md`) — there is no
 reset CLI.
 
-Full operator guide — reverse proxy, backups, upgrades, env vars, what not to host on: [`docs/prd/deploy.md`](docs/prd/deploy.md).
+Full operator guide — reverse proxy, backups, upgrades, env vars, what not to host on: [`docs/prd/deploy.md`](docs/prd/deploy.md). Compose and Ansible examples: [`deploy/compose.yaml`](deploy/compose.yaml), [`deploy/ansible/playbook.yml`](deploy/ansible/playbook.yml).
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
@@ -164,6 +177,8 @@ In-repo notes:
 |------|----------|
 | `docs/prd/` | Product requirements |
 | `docs/prd/deploy.md` | Self-host the Shukka server |
+| `deploy/compose.yaml` | Compose example (Shukka + MinIO) |
+| `deploy/ansible/playbook.yml` | Ansible playbook for that Compose file |
 | `docs/adr/` | Architecture decisions and their trade-offs |
 | `docs/spec.md` | Terminology, HTTP contracts, system invariants |
 | `.agents/skills/shukka-ops/references/api.md` | Full API reference |

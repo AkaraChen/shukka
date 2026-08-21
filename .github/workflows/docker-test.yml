@@ -16,6 +16,7 @@ on:
       - tsconfig.json
       - scripts/shukka-upload.mjs
       - tests/e2e/**
+      - deploy/**
       - .github/scripts/**
       - .github/workflows/docker-test.yml
   pull_request:
@@ -31,6 +32,7 @@ on:
       - tsconfig.json
       - scripts/shukka-upload.mjs
       - tests/e2e/**
+      - deploy/**
       - .github/scripts/**
       - .github/workflows/docker-test.yml
 
@@ -41,9 +43,10 @@ concurrency:
 permissions:
   contents: read
 
-# Builds the runtime image and walks the documented operator path: docker run
-# with a data volume, health, first-time setup, S3-backed publish, public feed,
-# volume restart, then host-platform electron-updater + rollback.
+# Builds the runtime image and walks the documented operator paths: docker run,
+# deploy/compose.yaml, and deploy/ansible/playbook.yml. Each path covers health,
+# first-time setup, S3-backed publish, and the public feed. The image job also
+# checks volume restart and host-platform electron-updater + rollback.
 # MinIO is reached by hostname so presigned URLs work from both the container
 # (write probe / HeadObject) and the runner (PUT / download).
 jobs:
@@ -144,3 +147,144 @@ jobs:
       - name: Container logs
         if: failure()
         run: docker logs shukka
+
+  compose:
+    name: Compose flows
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SHUKKA_URL: http://localhost:3000
+      MINIO_URL: http://minio:9000
+      SHUKKA_IMAGE: shukka:test
+      COMPOSE_FILE: deploy/compose.yaml
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: '24'
+
+      - name: Resolve MinIO from the runner and the stack
+        run: echo '127.0.0.1 minio' | sudo tee -a /etc/hosts
+
+      - name: Build the image
+        run: docker build -t shukka:test .
+
+      - name: Start the Compose example
+        run: docker compose up -d
+
+      - name: Create the example MinIO bucket
+        run: |
+          node .github/scripts/wait-for.mjs http://127.0.0.1:9000/minio/health/live
+          docker exec minio mkdir -p /data/releases
+
+      - name: Health, non-root, fresh setup
+        run: node .github/scripts/assert-container.mjs shukka --wait --fresh
+
+      - name: Provision app, bucket and API key
+        id: provision
+        run: node .github/scripts/provision.mjs
+
+      - name: Data volume has SQLite and the encryption key
+        run: node .github/scripts/assert-container.mjs shukka --data
+
+      - name: Publish a fake release
+        id: publish
+        env:
+          SHUKKA_SERVER_URL: ${{ env.SHUKKA_URL }}
+          SHUKKA_API_KEY: ${{ steps.provision.outputs.api-key }}
+          SHUKKA_APP: demo-app
+          SHUKKA_CHANNEL: stable
+          SHUKKA_DIRECTORY: out
+          SHUKKA_RELEASE: 'true'
+        run: |
+          node .github/scripts/fake-release.mjs out "1.2.${{ github.run_number }}"
+          node scripts/shukka-upload.mjs
+
+      - name: Verify the update feed serves the new version
+        run: |
+          node .github/scripts/verify-feed.mjs \
+            "$SHUKKA_URL/api/update/demo-app/stable" "${{ steps.publish.outputs.version }}"
+
+      - name: Restart the Compose stack
+        run: docker compose restart shukka
+
+      - name: Volume and feed survive restart
+        run: |
+          node .github/scripts/assert-container.mjs shukka --wait --data
+          node .github/scripts/verify-feed.mjs \
+            "$SHUKKA_URL/api/update/demo-app/stable" "${{ steps.publish.outputs.version }}"
+
+      - name: Compose logs
+        if: failure()
+        run: docker compose logs
+
+  ansible:
+    name: Ansible flows
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SHUKKA_URL: http://localhost:3000
+      MINIO_URL: http://minio:9000
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: '24'
+
+      - name: Resolve MinIO from the runner and the stack
+        run: echo '127.0.0.1 minio' | sudo tee -a /etc/hosts
+
+      - name: Build the image
+        run: docker build -t shukka:test .
+
+      - name: Install ansible-core
+        run: sudo apt-get update && sudo apt-get install -y ansible-core
+
+      - name: Run the Ansible playbook against localhost
+        run: |
+          ansible-playbook -i localhost, -c local \
+            -e shukka_image=shukka:test \
+            deploy/ansible/playbook.yml
+
+      - name: Health, non-root, fresh setup
+        run: node .github/scripts/assert-container.mjs shukka --wait --fresh
+
+      - name: Provision app, bucket and API key
+        id: provision
+        run: node .github/scripts/provision.mjs
+
+      - name: Data volume has SQLite and the encryption key
+        run: node .github/scripts/assert-container.mjs shukka --data
+
+      - name: Publish a fake release
+        id: publish
+        env:
+          SHUKKA_SERVER_URL: ${{ env.SHUKKA_URL }}
+          SHUKKA_API_KEY: ${{ steps.provision.outputs.api-key }}
+          SHUKKA_APP: demo-app
+          SHUKKA_CHANNEL: stable
+          SHUKKA_DIRECTORY: out
+          SHUKKA_RELEASE: 'true'
+        run: |
+          node .github/scripts/fake-release.mjs out "1.2.${{ github.run_number }}"
+          node scripts/shukka-upload.mjs
+
+      - name: Verify the update feed serves the new version
+        run: |
+          node .github/scripts/verify-feed.mjs \
+            "$SHUKKA_URL/api/update/demo-app/stable" "${{ steps.publish.outputs.version }}"
+
+      - name: Restart the deployed stack
+        run: docker restart shukka
+
+      - name: Volume and feed survive restart
+        run: |
+          node .github/scripts/assert-container.mjs shukka --wait --data
+          node .github/scripts/verify-feed.mjs \
+            "$SHUKKA_URL/api/update/demo-app/stable" "${{ steps.publish.outputs.version }}"
+
+      - name: Deployed stack logs
+        if: failure()
+        run: docker logs shukka && docker logs minio

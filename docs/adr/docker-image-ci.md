@@ -10,8 +10,8 @@ Accepted.
 
 ## Decision
 
-1. **单独的 workflow** `.github/workflows/docker-test.yml`（不并进 `ci.yml` 或 `docker.yml`）。职责只是：用根 `Dockerfile` 构建、按 README / deploy 文档的 `docker run -p 3000:3000 -v …:/data` 启动、走通容器内主路径。不 login、不 push、不打多架构。
-2. **触发**：`main` / PR 在 Dockerfile、应用源码、`drizzle/`、lockfile、本 workflow 或它调用的脚本 / e2e 变更时跑；`workflow_dispatch` 可手动。文档-only PR 不跑。
+1. **单独的 workflow** `.github/workflows/docker-test.yml`（不并进 `ci.yml` 或 `docker.yml`）。职责是：用根 `Dockerfile` 构建、按 README / deploy 文档的 `docker run -p 3000:3000 -v …:/data` 启动、走通容器内主路径；同一 workflow 再按 `deploy/compose.yaml` 与 `deploy/ansible/playbook.yml` 拉起示例栈并走通 health / setup / 发版 / feed。不 login、不 push、不打多架构。
+2. **触发**：`main` / PR 在 Dockerfile、应用源码、`drizzle/`、lockfile、`deploy/`、本 workflow 或它调用的脚本 / e2e 变更时跑；`workflow_dispatch` 可手动。纯无关文档 PR 不跑。
 3. **复用已有脚本**，不在 YAML 里重写业务：`start-s3.mjs`、`provision.mjs`、`fake-release.mjs`、`shukka-upload.mjs`、`verify-feed.mjs`、`tests/e2e/run.mjs`、`run-rollback.mjs`。容器契约（health、uid 1000、`/data` 文件、可选「未初始化」session）放 `.github/scripts/assert-container.mjs`。
 4. **S3 用 MinIO + 主机名 `minio`**。创建 app 时写入的 endpoint 会出现在 presigned URL 上，必须从容器（写探测 / HeadObject）和 runner（PUT / 下载）都能解析。CI 把 `minio` 写进 runner 的 `/etc/hosts`，容器加 `--add-host minio:host-gateway`。不测 JuiceFS：那是 S3 兼容面，不是镜像契约。不测 Tauri：Rust 工具链与镜像无关，仍由 Action test 覆盖。
 5. **先证明卷，再跑 updater**。发版并校验 feed 后 `docker restart`，确认 health、`/data` 与同一版本 feed 还在，然后才跑 electron-updater / rollback（rollback 会改 currentVersion）。

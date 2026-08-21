@@ -10,6 +10,7 @@ data
 .cursor
 tests
 docs
+deploy
 skills
 *.md
 AGENTS.md
