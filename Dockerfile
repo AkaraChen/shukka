@@ -1,5 +1,6 @@
 FROM node:24-bookworm-slim AS build
 WORKDIR /app
+# better-sqlite3 ships prebuilds but its install script still invokes node-gyp.
 RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ \
     && rm -rf /var/lib/apt/lists/*
 
@@ -7,24 +8,29 @@ COPY package.json package-lock.json ./
 RUN npm ci
 
 COPY . .
-RUN npm run build
+RUN npm run build \
+    && node -e "\
+      const fs = require('fs');\
+      const dir = '.output/server/node_modules/better-sqlite3/prebuilds';\
+      for (const name of fs.readdirSync(dir)) {\
+        if (name !== 'linuxmusl-' + process.arch + '.node') fs.rmSync(dir + '/' + name);\
+      }\
+    "
 
-FROM node:24-bookworm-slim AS runtime
+FROM node:24-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production \
     SHUKKA_DATA_DIR=/data
 
-# better-sqlite3 compiles a native binding; install the toolchain only for npm ci.
-COPY package.json package-lock.json ./
-RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ \
-    && npm ci --omit=dev && npm cache clean --force \
-    && apt-get purge -y python3 make g++ && apt-get autoremove -y \
-    && rm -rf /var/lib/apt/lists/*
+# Nitro traces better-sqlite3 (native prebuilds) into .output. redoc's
+# standalone bundle is read via require.resolve at runtime, so copy just that
+# file — not the rest of production node_modules.
+COPY --from=build --chown=node:node /app/.output ./.output
+COPY --from=build --chown=node:node /app/node_modules/redoc/package.json ./node_modules/redoc/package.json
+COPY --from=build --chown=node:node /app/node_modules/redoc/bundles/redoc.standalone.js ./node_modules/redoc/bundles/redoc.standalone.js
+COPY --chown=node:node drizzle ./drizzle
 
-COPY --from=build /app/.output ./.output
-COPY drizzle ./drizzle
-
-RUN mkdir -p /data && chown -R node:node /app /data
+RUN mkdir -p /data && chown node:node /data
 USER node
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"

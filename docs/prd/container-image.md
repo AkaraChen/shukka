@@ -17,6 +17,7 @@
 4. 公开仓库的镜像可匿名拉取，与现有 `docker run ghcr.io/shukka-app/shukka` 文档一致。
 5. 构建失败则不推送；workflow 必须通过 actionlint。
 6. 与 `main` 上已有的多架构（amd64+arm64）发布共用同一条 Docker workflow，避免第二条 job 覆盖 `latest`。`main` 继续发 `latest` 与 `sha-*`；PR 不发镜像。
+7. PR 与 `main` 用单独的 Docker test workflow 构建同一份 `Dockerfile`（不推送），按文档化的 `docker run` 走通 health、setup、发版、feed、卷重启、electron-updater / rollback。见 `docs/adr/docker-image-ci.md`。
 
 ## Non-goals
 
@@ -54,3 +55,4 @@
 - [ ] PR 不发布镜像。
 - [x] `.github/workflows/docker.yml` 通过 actionlint。
 - [x] Tag 规则与 `.github/workflows/docker.yml` 中 `docker/metadata-action` 的 `tags`（约 44–49 行）一致：`latest`（默认分支）、`sha-*`、semver `{version}` / `{major}.{minor}`、major ≥ 1 时的 `{major}`。
+- [x] `.github/workflows/docker-test.yml` 在 Dockerfile / 应用源码变更的 PR 与 `main` 上构建镜像并走通容器主路径，不推送。

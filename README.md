@@ -152,7 +152,8 @@ The GitHub Action is a JavaScript action (`using: node24`) so it does not need
 bash — Windows self-hosted runners with only MinGit work. It is linted with
 [actionlint](https://github.com/rhysd/actionlint). Ubuntu CI matrices MinIO and
 the JuiceFS S3 gateway; Windows action e2e stays on MinIO. See
-`.github/workflows/ci.yml` and `.github/workflows/action-test.yml`.
+`.github/workflows/ci.yml`, `.github/workflows/action-test.yml`, and
+`.github/workflows/docker-test.yml` (image build + container flows, no push).
 
 ## Documentation
 
