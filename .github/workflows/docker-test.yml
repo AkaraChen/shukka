@@ -1,0 +1,146 @@
+name: Docker test
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - package.json
+      - package-lock.json
+      - src/**
+      - drizzle/**
+      - public/**
+      - vite.config.ts
+      - tsconfig.json
+      - scripts/shukka-upload.mjs
+      - tests/e2e/**
+      - .github/scripts/**
+      - .github/workflows/docker-test.yml
+  pull_request:
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - package.json
+      - package-lock.json
+      - src/**
+      - drizzle/**
+      - public/**
+      - vite.config.ts
+      - tsconfig.json
+      - scripts/shukka-upload.mjs
+      - tests/e2e/**
+      - .github/scripts/**
+      - .github/workflows/docker-test.yml
+
+concurrency:
+  group: docker-test-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+# Builds the runtime image and walks the documented operator path: docker run
+# with a data volume, health, first-time setup, S3-backed publish, public feed,
+# volume restart, then host-platform electron-updater + rollback.
+# MinIO is reached by hostname so presigned URLs work from both the container
+# (write probe / HeadObject) and the runner (PUT / download).
+jobs:
+  image:
+    name: Image flows
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SHUKKA_URL: http://localhost:3000
+      MINIO_URL: http://minio:9000
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: '24'
+
+      - name: Resolve MinIO from the runner and the container
+        run: echo '127.0.0.1 minio' | sudo tee -a /etc/hosts
+
+      - name: Build the image
+        run: docker build -t shukka:test .
+
+      - name: Start MinIO
+        run: node .github/scripts/start-s3.mjs minio
+
+      - name: Run the image
+        run: |
+          docker run -d --name shukka \
+            -p 3000:3000 \
+            -v shukka-data:/data \
+            --add-host minio:host-gateway \
+            shukka:test
+
+      - name: Health, non-root, fresh setup
+        run: node .github/scripts/assert-container.mjs shukka --wait --fresh
+
+      - name: Provision app, bucket and API key
+        id: provision
+        run: node .github/scripts/provision.mjs
+
+      - name: Data volume has SQLite and the encryption key
+        run: node .github/scripts/assert-container.mjs shukka --data
+
+      - name: Publish a fake release
+        id: publish
+        env:
+          SHUKKA_SERVER_URL: ${{ env.SHUKKA_URL }}
+          SHUKKA_API_KEY: ${{ steps.provision.outputs.api-key }}
+          SHUKKA_APP: demo-app
+          SHUKKA_CHANNEL: stable
+          SHUKKA_DIRECTORY: out
+          SHUKKA_RELEASE: 'true'
+        run: |
+          node .github/scripts/fake-release.mjs out "1.2.${{ github.run_number }}"
+          node scripts/shukka-upload.mjs
+
+      - name: Verify the update feed serves the new version
+        run: |
+          node .github/scripts/verify-feed.mjs \
+            "$SHUKKA_URL/api/update/demo-app/stable" "${{ steps.publish.outputs.version }}"
+
+      - name: Restart the container
+        run: docker restart shukka
+
+      - name: Volume and feed survive restart
+        run: |
+          node .github/scripts/assert-container.mjs shukka --wait --data
+          node .github/scripts/verify-feed.mjs \
+            "$SHUKKA_URL/api/update/demo-app/stable" "${{ steps.publish.outputs.version }}"
+
+      - name: Install electron-updater e2e
+        run: npm ci --prefix tests/e2e
+
+      - name: electron-updater check and download
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libnss3 libatk-bridge2.0-0 libgtk-3-0 libgbm1 libasound2t64
+          xvfb-run -a node tests/e2e/run.mjs
+        env:
+          SHUKKA_URL: ${{ env.SHUKKA_URL }}
+          SHUKKA_API_KEY: ${{ steps.provision.outputs.api-key }}
+          SHUKKA_APP: demo-app
+          SHUKKA_CHANNEL: stable
+          E2E_SKIP_PUBLISH: '1'
+          E2E_VERSION: ${{ steps.publish.outputs.version }}
+          ELECTRON_DISABLE_SANDBOX: '1'
+
+      - name: electron-updater rollback
+        run: xvfb-run -a node tests/e2e/run-rollback.mjs
+        env:
+          SHUKKA_URL: ${{ env.SHUKKA_URL }}
+          SHUKKA_API_KEY: ${{ steps.provision.outputs.api-key }}
+          SHUKKA_APP: demo-app
+          SHUKKA_CHANNEL: stable
+          ELECTRON_DISABLE_SANDBOX: '1'
+
+      - name: Container logs
+        if: failure()
+        run: docker logs shukka
