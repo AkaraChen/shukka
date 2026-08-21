@@ -59,7 +59,7 @@ Out of scope until explicitly specified: anything not yet accepted in a PRD.
 - 公开 API 文档（`/api/v1/openapi.json`，经 `/docs` 渲染）只展示 API key（或 session）可调用的操作与公开 feed/notes；session-only 管理操作（删 app、API key 生命周期、实例级路由）不在文档中。
 - 面板 app 详情 **API docs** 入口打开 `/docs`：server route 用 cheerio 把本地 `redoc` standalone bundle 内联进自建 HTML 模板，`Redoc.init` 以 `specUrl` 让浏览器同源 fetch `/api/v1/openapi.json`（带 session cookie），整页无侧栏与顶栏（admin / developer）。HTML 静态、与 origin 无关，进程内组装一次缓存。点击在新浏览器标签打开，当前页标签不切换。未登录重定向到登录。Integration 的 HTTP API 接入说明提供同样打开新标签的按钮。
 - 制品字节永不经过 Shukka 进程（上传直传 S3，下载 302）。
-- 错误响应统一为 `{ error, message }`，`error` 取自固定码集：`unauthorized`、`forbidden`、`not_found`、`conflict`、`invalid_request`、`storage_error`、`metadata_error`。
+- 错误响应统一为 `{ error, message }`，`error` 取自固定码集：`unauthorized`、`forbidden`、`not_found`、`conflict`、`invalid_request`、`storage_error`、`metadata_error`、`rate_limited`。
 
 ### Health（无鉴权）
 
@@ -70,6 +70,7 @@ Out of scope until explicitly specified: anything not yet accepted in a PRD.
 ### Panel
 
 - 除 setup/login 外的面板路由、`/docs` 与管理 API 均要求 session；未认证重定向到登录（未初始化时重定向到 setup）。
+- `POST /api/admin/login` 按来源 IP 对失败尝试做固定窗口限速（15 分钟内 10 次失败）；超限返回 `rate_limited`（429）；登录成功则清零该 IP 计数。
 - `POST /api/admin/storage/test` 对提交的 S3 配置做写探测（Put+Delete 探针对象）并返回 `{ ok: true }`，不落库；创建与编辑 app 保存前服务端始终重复同一探测，失败拒绝保存。
 - API key 明文仅在创建响应中出现一次，此后不可再取得。
 - S3 secret access key 加密存储，密钥在服务数据目录中自动生成。

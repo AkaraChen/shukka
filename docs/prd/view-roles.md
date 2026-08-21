@@ -1,5 +1,7 @@
 # PRD: 视图角色（View roles）与侧栏底部角色菜单
 
+**Status: shipped.**
+
 ## Problem
 
 面板侧栏底部是三行松散的入口：语言切换、设置链接、退出登录，占位大且层级相同。同时，面板的实际使用者不止部署者本人：内容运营只关心各 channel 的发布状态与下载/检查数据，开发者需要集成指引、API key 与新建应用/channel，而删除应用、修改密码等管理动作只有管理员需要。所有入口对所有人可见，既嘈杂也容易误触。
@@ -55,13 +57,13 @@
 
 ## Acceptance criteria
 
-- [ ] 侧栏底部为单一按钮（UserRound 图标 + 当前角色名），点击向上弹出菜单；侧栏折叠为图标模式时按钮仍可用（tooltip 显示角色名）。
-- [ ] 菜单内含：角色三选（当前项带标记）、语言切换、外观切换、设置入口（仅 admin 可见）、退出登录；语言与外观行点击不关闭菜单。
-- [ ] content 角色：app 详情见 Channels 与 Settings 标签，Settings 内仅 Release log 分区；无新建 channel、新建应用按钮与设置入口。
-- [ ] developer 角色：另有 Integration、API docs（ReDoc）与 API keys 标签、新建 channel、新建应用入口、promote 及 app Settings 标签（编辑表单可见，删除应用区块不可见）；无设置入口；Channels 标签内不见趋势图、版本统计按钮与 release notes 编辑按钮。
-- [ ] content 角色：Channels 可见 draft 行与 notes 编辑，不见 promote。
-- [ ] admin 角色：全部入口可见。
-- [ ] 直接访问被隐藏入口的 URL（如 `/settings`、`/apps/new`）正常打开，无重定向。
-- [ ] 角色选择写入 cookie；新浏览器（无 cookie）默认 admin；SSR 首屏底部按钮即显示正确角色名，无闪烁。
-- [ ] 固定主题后刷新/重开浏览器，首屏无错误主题闪烁；SSR HTML 的 `<html>` 类与 `color-scheme` 与 cookie 一致；无 cookie 时仍跟随系统。
-- [ ] 所有新文案来自类型化字典（en 源语言，zh 编译期键对齐）。
+- [x] 侧栏底部为单一按钮（UserRound 图标 + 当前角色名），点击向上弹出菜单；侧栏折叠为图标模式时按钮仍可用（tooltip 显示角色名）。
+- [x] 菜单内含：角色三选（当前项带标记）、语言切换、外观切换、设置入口（仅 admin 可见）、退出登录；语言与外观行点击不关闭菜单。
+- [x] content 角色：app 详情见 Channels 与 Settings 标签，Settings 内仅 Release log 分区；无新建 channel、新建应用按钮与设置入口。
+- [x] developer 角色：另有 Integration、API docs（ReDoc）与 API keys 标签、新建 channel、新建应用入口、promote 及 app Settings 标签（编辑表单可见，删除应用区块不可见）；无设置入口；Channels 标签内不见趋势图、版本统计按钮与 release notes 编辑按钮。
+- [x] content 角色：Channels 可见 draft 行与 notes 编辑，不见 promote。
+- [x] admin 角色：全部入口可见。
+- [x] 直接访问被隐藏入口的 URL（如 `/settings`、`/apps/new`）正常打开，无重定向。
+- [x] 角色选择写入 cookie；新浏览器（无 cookie）默认 admin；SSR 首屏底部按钮即显示正确角色名，无闪烁。
+- [x] 固定主题后刷新/重开浏览器，首屏无错误主题闪烁；SSR HTML 的 `<html>` 类与 `color-scheme` 与 cookie 一致；无 cookie 时仍跟随系统。
+- [x] 所有新文案来自类型化字典（en 源语言，zh 编译期键对齐）。

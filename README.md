@@ -35,14 +35,23 @@ npm start          # http://localhost:3000
 ```
 
 Open the panel and set the admin password on first visit. Everything Shukka persists —
-the SQLite database and the key that encrypts stored S3 secrets — lives in `/data`
-(`SHUKKA_DATA_DIR`, default `./data`). Back up that directory and nothing else.
+the SQLite database and `encryption.key` — lives in `/data` (`SHUKKA_DATA_DIR`,
+default `./data`). Back up that whole directory. Restore is copy the directory back;
+a database without the key cannot decrypt stored S3 secrets.
+
+`GET /api/health` is the liveness probe (`200 { status: "ok", db: "ok" }`, or
+`503` when SQLite is down). The image runs as `node` and health-checks that path.
+
+Forgot the admin password: delete the singleton `admin` row (`id = 1`) and reopen
+`/setup`. That is the ADR recovery path (`docs/adr/auth-model.md`) — there is no
+reset CLI.
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `PORT` | `3000` | HTTP port |
 | `SHUKKA_DATA_DIR` | `./data` | Database and encryption key location |
 | `SHUKKA_DB_PATH` | `{data}/shukka.db` | Override the database file |
+| `SHUKKA_SECURE_COOKIES` | unset | Set `1` to force `Secure` on the session cookie (or terminate TLS and forward `X-Forwarded-Proto: https`) |
 
 ## Publish a release
 

@@ -16,7 +16,7 @@
 3. 正式版同时打 `{version}`、`{major}.{minor}`、非 0 的 `{major}`，以及 `latest`。预发布只打 `{version}`（可含后缀），不移动 `latest` / `{major}` / `{major}.{minor}`。
 4. 公开仓库的镜像可匿名拉取，与现有 `docker run ghcr.io/shukka-app/shukka` 文档一致。
 5. 构建失败则不推送；workflow 必须通过 actionlint。
-6. 与 `main` 上已有的多架构（amd64+arm64）发布共用同一条 Docker workflow，避免第二条 job 覆盖 `latest`。
+6. 与 `main` 上已有的多架构（amd64+arm64）发布共用同一条 Docker workflow，避免第二条 job 覆盖 `latest`。`main` 继续发 `latest` 与 `sha-*`；PR 不发镜像。
 
 ## Non-goals
 
@@ -24,6 +24,7 @@
 - 推 Docker Hub 或其他 registry。
 - 在 PR 上发镜像。
 - 把对象存储或 MinIO 打进镜像。
+- Helm chart 或其他编排打包。
 
 ## Flows
 
@@ -52,3 +53,4 @@
 - [ ] 预发布标签不改变 `latest`。
 - [ ] PR 不发布镜像。
 - [x] `.github/workflows/docker.yml` 通过 actionlint。
+- [x] Tag 规则与 `.github/workflows/docker.yml` 中 `docker/metadata-action` 的 `tags`（约 44–49 行）一致：`latest`（默认分支）、`sha-*`、semver `{version}` / `{major}.{minor}`、major ≥ 1 时的 `{major}`。
