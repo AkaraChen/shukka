@@ -1,21 +1,48 @@
-# Shukka
+<p align="center">
+  <img src="public/favicon.svg" width="72" height="72" alt="Shukka">
+</p>
 
-Self-hosted release manager for Electron and Tauri apps that update through
-`electron-updater` or Tauri plugin-updater and S3.
+<h1 align="center">Shukka</h1>
 
-Create an app, point it at a bucket, and Shukka gives you a public update feed per channel,
-API keys for CI, and a record of every version you have shipped.
+<p align="center">
+  Self-hosted updates for Electron and Tauri.<br>
+  Your bucket. Your feed. Your panel.
+</p>
+
+<p align="center">
+  <a href="https://github.com/shukka-app/shukka/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-26251e?style=flat-square" alt="MIT"></a>
+  <a href="https://github.com/shukka-app/shukka/pkgs/container/shukka"><img src="https://img.shields.io/badge/ghcr-shukka--app%2Fshukka-f54e00?style=flat-square" alt="GHCR"></a>
+  <a href="https://github.com/shukka-app/shukka/releases"><img src="https://img.shields.io/github/v/release/shukka-app/shukka?style=flat-square&color=26251e" alt="Release"></a>
+  <a href="https://github.com/shukka-app/shukka/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/shukka-app/shukka/ci.yml?branch=main&style=flat-square&label=CI" alt="CI"></a>
+</p>
+
+Create an app, point it at a bucket, and Shukka gives you a public update feed
+per channel, API keys for CI, and a record of every version you have shipped.
+
+Desktop clients keep using `electron-updater` or Tauri plugin-updater. Installers
+never transit the Shukka process — they go straight to your S3-compatible storage.
 
 ## What it does
 
-- **Panel** — apps, channels, versions and download counts behind a single admin password.
-- **Storage per app** — each app carries its own S3 settings, so AWS, Cloudflare R2 and MinIO can coexist.
-- **Uploads over presigned URLs** — installers go straight from CI to S3; Shukka never proxies the bytes.
-- **Public feed** — `electron-updater` reads `/api/update/{app}/{channel}` with no credentials, exactly as
-  it reads a generic provider. Metadata is served byte-for-byte as `electron-builder` wrote it.
-- **Tauri feed** — plugin-updater reads JSON at `/api/update/{app}/{channel}`.
-- **GitHub Action** — one step publishes an `electron-builder` or Tauri output directory.
-- **Agent skill** — `.agents/skills/shukka-ops/` teaches an agent to drive the API.
+| | |
+| --- | --- |
+| **Panel** | Apps, channels, versions, and download counts behind a single admin password. |
+| **Your storage** | Each app carries its own S3 settings, so AWS, Cloudflare R2, and MinIO can coexist. |
+| **Direct uploads** | Installers go from CI to S3 over presigned URLs. Shukka never proxies the bytes. |
+| **Public Electron feed** | `electron-updater` reads `/api/update/{app}/{channel}` with no credentials. Metadata is served byte-for-byte as `electron-builder` wrote it. |
+| **Public Tauri feed** | plugin-updater reads JSON at the same URL. |
+| **GitHub Action** | One step publishes an `electron-builder` or Tauri output directory. |
+| **Drafts by default** | Finalize leaves a draft. Promote — or pass `release: true` — before users see it. |
+| **Agent skill** | `.agents/skills/shukka-ops/` teaches an agent to drive the API. |
+
+```mermaid
+flowchart LR
+  CI["CI / Action"] -- "presigned PUT" --> S3[(Your S3)]
+  Panel[Panel] --> Shukka
+  CI --> Shukka
+  App["Electron / Tauri"] -- "public feed" --> Shukka
+  Shukka -- "302" --> S3
+```
 
 ## Run it
 
@@ -24,7 +51,7 @@ docker run -d --name shukka -p 3000:3000 -v shukka-data:/data ghcr.io/shukka-app
 ```
 
 Pushing a `vMAJOR.MINOR.PATCH` tag publishes that image to GitHub Packages. Pin a
-version with `ghcr.io/shukka-app/shukka:0.1.0` if you do not want `latest`.
+version with `ghcr.io/shukka-app/shukka:0.1.1` if you do not want `latest`.
 
 Or from source:
 
@@ -65,6 +92,7 @@ Create an app in the panel, then an API key on its **API keys** tab. In CI:
     app: my-app
     channel: stable
     directory: dist
+    # release: true   # omit to leave the version as a draft
 ```
 
 Point the whole `electron-builder` or Tauri output directory at it — installers, `.blockmap`
@@ -83,13 +111,27 @@ node scripts/shukka-upload.mjs
 
 ## Point the app at the feed
 
-The **Integration** tab prints these with your real URLs filled in:
+The **Integration** tab prints these with your real URLs filled in.
+
+**Electron**
 
 ```yaml
 # electron-builder.yml
 publish:
   provider: generic
   url: https://updates.example.com/api/update/my-app/stable
+```
+
+**Tauri**
+
+```json
+{
+  "plugins": {
+    "updater": {
+      "endpoints": ["https://updates.example.com/api/update/my-app/stable"]
+    }
+  }
+}
 ```
 
 Uploads are atomic: until `finalize` succeeds — and, by default, until the version is
@@ -112,6 +154,9 @@ the JuiceFS S3 gateway; Windows action e2e stays on MinIO. See
 
 ## Documentation
 
+User-facing docs live in [`shukka-app/docs`](https://github.com/shukka-app/docs).
+In-repo notes:
+
 | Path | Contents |
 |------|----------|
 | `docs/prd/` | Product requirements |
@@ -121,4 +166,4 @@ the JuiceFS S3 gateway; Windows action e2e stays on MinIO. See
 
 ## License
 
-MIT
+[MIT](LICENSE)
