@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="public/og.png" alt="Shukka — self-hosted updates for Electron and Tauri" width="1280">
+</p>
+
 # Shukka
 
 Self-hosted release manager for Electron apps that update through `electron-updater` and S3.
