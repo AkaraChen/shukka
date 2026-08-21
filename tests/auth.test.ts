@@ -87,6 +87,19 @@ describe('admin session', () => {
     })
     expect(auth.readSessionCookie(request)).toBe('abc123')
   })
+
+  it('treats an expired session as invalid and prunes it on createSession', () => {
+    const token = auth.initializeAdmin('correct horse battery')
+    expect(auth.sessionIsValid(token)).toBe(true)
+
+    db.update(sessions).set({ expiresAt: Math.floor(Date.now() / 1000) - 60 }).run()
+    expect(auth.sessionIsValid(token)).toBe(false)
+
+    const next = auth.createSession()
+    expect(auth.sessionIsValid(token)).toBe(false)
+    expect(auth.sessionIsValid(next)).toBe(true)
+    expect(db.select().from(sessions).all()).toHaveLength(1)
+  })
 })
 
 describe('app actor', () => {

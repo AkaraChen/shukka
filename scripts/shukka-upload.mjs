@@ -10,6 +10,7 @@
 import { createReadStream } from 'node:fs'
 import { readdir, readFile, stat } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 const MAX_ATTEMPTS = 3
 
@@ -27,14 +28,14 @@ function required(name, value) {
  * Standalone CI sets SHUKKA_*; a JavaScript action exposes inputs as INPUT_*.
  * `server-url` becomes `INPUT_SERVER-URL` (hyphens kept, per Actions metadata).
  */
-function readInput(actionInput, envName, fallback = '') {
+export function readInput(actionInput, envName, fallback = '') {
   return process.env[envName] || process.env[`INPUT_${actionInput.toUpperCase()}`] || fallback
 }
 
 /** electron-builder emits blockmaps and yml alongside installers; skip nothing else. */
 const IGNORED = new Set(['.DS_Store', 'builder-debug.yml', 'builder-effective-config.yaml'])
 
-async function collectFiles(directory) {
+export async function collectFiles(directory) {
   const entries = await readdir(directory, { withFileTypes: true })
   const files = []
   for (const entry of entries) {
@@ -46,7 +47,7 @@ async function collectFiles(directory) {
 }
 
 /** electron-builder writes the release version into every latest*.yml it produces. */
-async function versionFromMetadata(files) {
+export async function versionFromMetadata(files) {
   const metadata = files.find((file) => /\.ya?ml$/i.test(file.filename))
   if (!metadata) fail('No electron-updater .yml metadata file found in the directory')
   const match = (await readFile(metadata.path, 'utf8')).match(/^version:\s*(.+)$/m)
@@ -124,4 +125,6 @@ async function main() {
   }
 }
 
-main().catch((error) => fail(error.stack ?? String(error)))
+if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
+  main().catch((error) => fail(error.stack ?? String(error)))
+}
