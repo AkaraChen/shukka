@@ -252,6 +252,27 @@ describe('release flow', () => {
     expect(init.uploadId).toBeTruthy()
   })
 
+  it('rolls the feed back when currentVersion is pointed at an older released version', async () => {
+    const app = await createApp(appInput)
+    const first = await publish(app, 'stable', '1.0.0')
+    const second = await publish(app, 'stable', '2.0.0')
+
+    const live = await resolveFeedRequest('acme', 'stable', 'latest.yml', ORIGIN)
+    expect((live as { body: string }).body).toContain('version: 2.0.0')
+
+    const { setCurrentVersion } = await import('~/server/channels.ts')
+    setCurrentVersion(app.id, 'stable', '1.0.0')
+
+    const rolled = await resolveFeedRequest('acme', 'stable', 'latest.yml', ORIGIN)
+    expect((rolled as { body: string }).body).toContain('version: 1.0.0')
+    expect(getChannel(app.id, 'stable').currentVersionId).toBe(first.result.versionId)
+    await expect(resolveFeedRequest('acme', 'stable', second.installer, ORIGIN)).resolves.toMatchObject({
+      kind: 'redirect',
+    })
+    expect(db.select().from(versions).where(eq(versions.id, first.result.versionId)).get()?.releasedAt).not.toBeNull()
+    expect(db.select().from(versions).where(eq(versions.id, second.result.versionId)).get()?.releasedAt).not.toBeNull()
+  })
+
   it('falls back to the previous version when the current one is deleted', async () => {
     const app = await createApp(appInput)
     const first = await publish(app, 'stable', '1.0.0')
