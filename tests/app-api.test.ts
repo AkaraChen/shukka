@@ -63,7 +63,9 @@ describe('app API auth matrix', () => {
       params: { appSlug: 'acme' },
     })
     expect(ok.status).toBe(200)
-    expect(((await ok.json()) as { app: { slug: string } }).app.slug).toBe('acme')
+    const detail = (await ok.json()) as { app: { slug: string } }
+    expect(detail.app.slug).toBe('acme')
+    expect(detail).not.toHaveProperty('keys')
 
     const PATCH = routeHandler(appRoute.Route, 'PATCH')
     const patched = await PATCH({
@@ -126,6 +128,24 @@ describe('app API auth matrix', () => {
       params: { appSlug: 'acme' },
     })
     expect(keyDenied.status).toBe(403)
+  })
+
+  it('includes key metadata on session app detail', async () => {
+    const app = await makeApp('acme')
+    const { hash, hint } = auth.generateApiKey()
+    db.insert(apiKeys).values({ appId: app.id, name: 'ci', hash, hint }).returning().get()
+    const token = auth.login('correct horse battery')
+    const GET = routeHandler(appRoute.Route, 'GET')
+    const listed = await GET({
+      request: new Request('https://shukka.test/api/v1/apps/acme', {
+        headers: { cookie: `${auth.SESSION_COOKIE}=${token}` },
+      }),
+      params: { appSlug: 'acme' },
+    })
+    expect(listed.status).toBe(200)
+    const body = (await listed.json()) as { keys: { hint: string }[] }
+    expect(Array.isArray(body.keys)).toBe(true)
+    expect(body.keys.map((key) => key.hint)).toContain(hint)
   })
 
   it('lets a session list keys', async () => {

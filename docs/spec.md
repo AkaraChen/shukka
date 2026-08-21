@@ -53,7 +53,7 @@ Out of scope until explicitly specified: anything not yet accepted in a PRD.
 ### App API（`/api/v1/apps/{appSlug}`）
 
 - 对外标识为 app slug、channel name、version 字符串；不暴露数字 id。
-- 鉴权：session 或绑定该 slug 的 API key（`requireAppActor`）。Key 可改该 app 设置、CRUD channel / version / note、设 `currentVersion`、读详情与趋势。Key 不可删 app、不可管理 API key。
+- 鉴权：session 或绑定该 slug 的 API key（`requireAppActor`）。Key 可改该 app 设置、CRUD channel / version / note、设 `currentVersion`、读详情与趋势。Key 不可删 app、不可管理 API key。`GET /api/v1/apps/{appSlug}` 仅对 session actor 返回 `keys`；以 API key 鉴权时省略该属性。
 - `PATCH .../channels/{channel}` 设 `currentVersion`：目标为 draft 时在同一事务写入 `releasedAt` 再切指针（promote）；目标为已发布版本则只切指针（回滚）。
 - 实例级（列/建 app、登录改密、存储探测）与 API key CRUD 仅 session，不在 key 能力面。
 - 公开 API 文档（`/api/v1/openapi.json`，经 `/docs` 渲染）只展示 API key（或 session）可调用的操作与公开 feed/notes；session-only 管理操作（删 app、API key 生命周期、实例级路由）不在文档中。

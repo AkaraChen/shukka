@@ -62,13 +62,12 @@ export function appSummaries() {
 
 export type AppSummary = ReturnType<typeof appSummaries>[number]
 
-export function appDetailBySlug(slug: string, origin: string) {
-  return appDetail(getAppBySlug(slug).id, origin)
+export function appDetailBySlug(slug: string, origin: string, options?: { includeKeys?: boolean }) {
+  return appDetail(getAppBySlug(slug).id, origin, options)
 }
 
-export function appDetail(appId: number, origin: string) {
-  const app = getApp(appId)
-  const channels = listChannels(app.id).map((channel) => {
+function appChannels(app: App, origin: string) {
+  return listChannels(app.id).map((channel) => {
     const versions = listVersions(channel.id).map((version) => ({
       ...version,
       isDraft: version.releasedAt == null,
@@ -83,8 +82,10 @@ export function appDetail(appId: number, origin: string) {
       versions,
     }
   })
+}
 
-  const keys = listApiKeys(app.id).map((key) => ({
+function publicApiKeys(appId: number) {
+  return listApiKeys(appId).map((key) => ({
     id: key.id,
     name: key.name,
     hint: key.hint,
@@ -92,10 +93,21 @@ export function appDetail(appId: number, origin: string) {
     lastUsedAt: key.lastUsedAt,
     revokedAt: key.revokedAt,
   }))
-
-  return { app: publicApp(app), channels, keys }
 }
 
-export type AppDetail = ReturnType<typeof appDetail>
+export function appDetail(appId: number, origin: string, options?: { includeKeys?: boolean }) {
+  const app = getApp(appId)
+  const channels = appChannels(app, origin)
+  if (options?.includeKeys === false) {
+    return { app: publicApp(app), channels }
+  }
+  return { app: publicApp(app), channels, keys: publicApiKeys(app.id) }
+}
+
+export type AppDetail = {
+  app: PublicApp
+  channels: ReturnType<typeof appChannels>
+  keys: ReturnType<typeof publicApiKeys>
+}
 export type ChannelDetail = AppDetail['channels'][number]
 export type VersionDetail = ChannelDetail['versions'][number]
