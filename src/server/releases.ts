@@ -3,7 +3,7 @@ import { randomToken } from '~/lib/crypto.ts'
 import { db } from '~/db/index.ts'
 import { artifacts, channels, pendingUploads, versions } from '~/db/schema.ts'
 import { isUniqueConstraint, ShukkaError } from '~/lib/errors.ts'
-import { deleteObjects, getObjectText, headObject, objectKey, presignPut, settingsFromApp } from '~/lib/storage.ts'
+import { deleteObjects, getObjectText, headObject, objectKey, presignGet, presignPut, settingsFromApp } from '~/lib/storage.ts'
 import { createChannel, getChannel, getVersion } from './channels.ts'
 import { adapterFor } from './updaters/index.ts'
 import type { App } from '~/db/schema.ts'
@@ -225,6 +225,20 @@ export async function finalizeUpload(
     channel: channel.name,
     artifacts: verified.map((file) => ({ filename: file.filename, size: file.size, kind: file.kind })),
   }
+}
+
+/** Presigned GET for one file on a version (draft or released). Does not record a hit. */
+export async function presignVersionArtifact(
+  app: App,
+  channelName: string,
+  versionName: string,
+  filename: string,
+): Promise<string> {
+  assertFilename(filename)
+  const version = getVersion(app.id, channelName, versionName)
+  const artifact = listArtifacts(version.id).find((entry) => entry.filename === filename)
+  if (!artifact) throw new ShukkaError('not_found', `${filename} not found on version ${versionName}`)
+  return presignGet(settingsFromApp(app), artifact.s3Key)
 }
 
 export function listArtifacts(versionId: number) {

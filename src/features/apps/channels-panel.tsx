@@ -23,10 +23,11 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '~/comp
 import { Confirm } from '~/components/confirm.tsx'
 import { useFormatters, useT } from '~/lib/i18n/index.ts'
 import { useViewRole } from '~/lib/role-context.ts'
-import { canEditReleaseNotes, canPromote, canSeeTrafficStats } from '~/lib/role.ts'
+import { canDownloadInstallers, canEditReleaseNotes, canPromote, canSeeTrafficStats } from '~/lib/role.ts'
 import { cn } from '~/lib/utils.ts'
 import { ChannelTrend } from './channel-trend.tsx'
 import { platformsOf } from './platforms.ts'
+import { VersionDownloadDialog } from './version-download-dialog.tsx'
 import { VersionTrend } from './version-trend.tsx'
 import {
   createChannelMutationOptions,
@@ -278,6 +279,9 @@ function HistoryTable({ slug, app, channel }: { slug: string; app: PublicApp; ch
                             </Link>
                           </Button>
                         </RowAction>
+                      ) : null}
+                      {canDownloadInstallers(role) ? (
+                        <VersionDownloadDialog slug={slug} channel={channel.name} version={version} />
                       ) : null}
                       {canSeeTrafficStats(role) ? (
                         <VersionStatsDialog slug={slug} channel={channel.name} version={version} />

@@ -15,7 +15,7 @@ API key 只能 init/finalize 上传。面板能做的设 current、建 channel�
 1. 单一资源树：`/api/v1/apps/{appSlug}/...`，session cookie 与 Bearer API key 都能打（鉴权工具函数分流）。
 2. 对外标识只用自然键：app `slug`、channel `name`、version 字符串。HTTP 与面板路由（`/apps/{appSlug}`、notes 页用 version 字符串）不再暴露数字 id。
 3. Channel `name` 为 URL token：小写字母、数字、连字符、下划线，不能是任意文本（与 slug 同族，另允许 `_`；不再允许 `.`）。
-4. API key 能做绑定 app 内、面板能点的写/读：**改该 app 设置**、channel / version / note 的 CRUD、设 current、读详情与趋势。
+4. API key 能做绑定 app 内、面板能点的写/读：**改该 app 设置**、channel / version / note 的 CRUD、设 current、读详情与趋势、按版本+文件名领取制品 presigned GET。
 5. API key **不能**：建/列全部 app、删整个 app、改管理员密码、签发/吊销/删除 API key（key 只在面板管理）。
 6. 实例级（登录、改密、列/建 app、存储探测）仍走 session 专用路由，不进 key 的能力面。
 7. 面板 app 详情增加独立 **API docs** 入口，新浏览器标签打开 `/docs`：整页只有 ReDoc，无面板 chrome。可见性与 Integration 相同（admin / developer），不公开挂到未登录路由。Integration 的 HTTP API 接入说明里提到该文档，并提供同样打开新标签的按钮。

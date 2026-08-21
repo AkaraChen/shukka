@@ -19,7 +19,7 @@ export function openApiDocument(origin: string) {
     tags: [
       { name: 'App', description: 'Read and update one app.' },
       { name: 'Channels', description: 'Channels and current-version promote / rollback.' },
-      { name: 'Versions', description: 'Delete a version; read its notes and trend.' },
+      { name: 'Versions', description: 'Delete a version; read its notes and trend; download an artifact.' },
       { name: 'Notes', description: 'Per-version release notes (editor) and public read.' },
       { name: 'Upload', description: 'Presigned direct upload; defaults to draft.' },
       { name: 'Feed', description: 'Public update feed (Electron yml or Tauri JSON) — no auth.' },
@@ -102,6 +102,19 @@ export function openApiDocument(origin: string) {
           summary: 'Delete a version and its objects',
           parameters: [slugParam, channelParam, versionParam],
           responses: { '200': { description: 'Deleted' } },
+        },
+      },
+      '/api/v1/apps/{appSlug}/channels/{channel}/versions/{version}/artifacts/{filename}': {
+        get: {
+          tags: ['Versions'],
+          summary: 'Presigned GET for one artifact on that version (drafts included). Does not increment hits.',
+          parameters: [
+            slugParam,
+            channelParam,
+            versionParam,
+            { name: 'filename', in: 'path', required: true, schema: { type: 'string' } },
+          ],
+          responses: { '302': { description: 'Redirect to storage' }, '404': { description: 'Missing version or file' } },
         },
       },
       '/api/v1/apps/{appSlug}/channels/{channel}/versions/{version}/trend': {

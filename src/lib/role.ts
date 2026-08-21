@@ -30,6 +30,11 @@ export function canPromote(role: ViewRole): boolean {
   return role !== 'content'
 }
 
+/** Version installer download is visible to admin and developer, hidden from content. */
+export function canDownloadInstallers(role: ViewRole): boolean {
+  return role !== 'content'
+}
+
 /** Release-notes editing entries are visible to admin and content, hidden from developer. */
 export function canEditReleaseNotes(role: ViewRole): boolean {
   return role !== 'developer'

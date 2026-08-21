@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_ROLE, ROLE_COOKIE, canCreateApp, canEditReleaseNotes, canPromote, canSeeTrafficStats, getRoleCookie, resolveRole } from '~/lib/role.ts'
+import { DEFAULT_ROLE, ROLE_COOKIE, canCreateApp, canDownloadInstallers, canEditReleaseNotes, canPromote, canSeeTrafficStats, getRoleCookie, resolveRole } from '~/lib/role.ts'
 
 const requestWithCookie = (cookie: string) => new Request('https://shukka.test/apps', { headers: { cookie } })
 
@@ -43,6 +43,14 @@ describe('canPromote', () => {
     expect(canPromote('content')).toBe(false)
     expect(canPromote('developer')).toBe(true)
     expect(canPromote('admin')).toBe(true)
+  })
+})
+
+describe('canDownloadInstallers', () => {
+  it('hides installer download from content only', () => {
+    expect(canDownloadInstallers('content')).toBe(false)
+    expect(canDownloadInstallers('developer')).toBe(true)
+    expect(canDownloadInstallers('admin')).toBe(true)
   })
 })
 
