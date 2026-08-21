@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Sets up a Shukka instance end to end: admin, app on MinIO, and an API key.
+// Sets up a Shukka instance end to end: admin, app on the CI S3 backend, and an API key.
 import { appendFileSync } from 'node:fs'
 
 const base = process.env.SHUKKA_URL ?? 'http://localhost:3000'
@@ -32,12 +32,12 @@ const { app } = await call('/api/admin/apps', 'POST', {
   name: slug === 'demo-app' ? 'Demo App' : slug,
   slug,
   updaterKind,
-  s3Endpoint: process.env.MINIO_URL ?? 'http://localhost:9000',
+  s3Endpoint: process.env.S3_URL ?? process.env.MINIO_URL ?? 'http://localhost:9000',
   s3Region: 'us-east-1',
-  s3Bucket: process.env.MINIO_BUCKET ?? 'releases',
+  s3Bucket: process.env.S3_BUCKET ?? process.env.MINIO_BUCKET ?? 'releases',
   s3Prefix: 'demo-app',
-  s3AccessKeyId: process.env.MINIO_ACCESS_KEY ?? 'shukka',
-  s3SecretAccessKey: process.env.MINIO_SECRET_KEY ?? 'shukkasecret',
+  s3AccessKeyId: process.env.S3_ACCESS_KEY ?? process.env.MINIO_ACCESS_KEY ?? 'shukka',
+  s3SecretAccessKey: process.env.S3_SECRET_KEY ?? process.env.MINIO_SECRET_KEY ?? 'shukkasecret',
   s3ForcePathStyle: true,
 })
 
