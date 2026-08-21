@@ -14,7 +14,7 @@ All request and response bodies are JSON. Errors carry a stable machine-readable
 | `conflict` | 409 | Duplicate version, missing artifact, expired upload |
 | `invalid_request` | 400 | Malformed payload |
 | `storage_error` | 502 | S3 rejected the request |
-| `metadata_error` | 422 | Unparseable or contradictory `latest*.yml` |
+| `metadata_error` | 422 | Unparseable or contradictory `latest*.yml` or Tauri `latest.json` |
 
 ## Upload API — `Authorization: Bearer shk_…`
 
@@ -34,8 +34,10 @@ All request and response bodies are JSON. Errors carry a stable machine-readable
 ```
 
 `app` is optional; when present it must match the key's app. `size` is optional but
-checked at finalize when provided. At least one `.yml` file is required. `version` and each
-`filename` must not contain path separators or `..`.
+checked at finalize when provided. Electron uploads need at least one `.yml`; Tauri
+uploads need `latest.json` and/or updater artifacts with matching `.sig` files.
+`version` and each `filename` must not contain path separators or `..`. The publish
+action reads `version` from `latest*.yml` or `latest.json` when the input is omitted.
 
 ```json
 {
@@ -122,11 +124,22 @@ version, trends). Keys may **not** delete the app or manage API keys.
 `s3Endpoint` is `null` for AWS S3. Set `s3ForcePathStyle` for MinIO. Objects land at
 `{s3Prefix}/{channel}/{version}/{filename}`.
 
+## Public release notes — no auth
+
+`GET /api/v1/apps/{appSlug}/channels/{channel}/notes?from&to&locale` returns published
+notes for that channel (`from` inclusive, `to` exclusive). No API key. Only if the app
+enabled Release log.
+
+```bash
+curl "$SHUKKA_URL/api/v1/apps/my-app/channels/stable/notes?from=1.0.0&locale=en-US"
+```
+
 ## Update feed — no auth
 
 | Request | Response |
 |---------|----------|
 | `GET /api/update/{app}/{channel}/{name}.yml` | The current version's metadata, byte-for-byte |
+| `GET /api/update/{app}/{channel}` or `.../latest.json` | Tauri updater JSON for the current version |
 | `GET /api/update/{app}/{channel}/{artifact}` | `302` to a presigned S3 URL, valid for an hour |
 
 Metadata resolves against the channel's current version. Artifacts resolve by

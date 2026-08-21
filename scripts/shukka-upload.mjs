@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Publishes an electron-builder output directory to Shukka as one version.
+ * Publishes an electron-builder or Tauri output directory to Shukka as one version.
  *
  * Protocol (docs/adr/presigned-direct-upload.md):
  *   init -> presigned PUT per file -> direct upload to S3 -> finalize
@@ -46,13 +46,29 @@ export async function collectFiles(directory) {
   return files.sort((a, b) => a.filename.localeCompare(b.filename))
 }
 
-/** electron-builder writes the release version into every latest*.yml it produces. */
+/** electron-builder writes `version` into latest*.yml; Tauri writes it into latest.json. */
 export async function versionFromMetadata(files) {
   const metadata = files.find((file) => /\.ya?ml$/i.test(file.filename))
-  if (!metadata) fail('No electron-updater .yml metadata file found in the directory')
-  const match = (await readFile(metadata.path, 'utf8')).match(/^version:\s*(.+)$/m)
-  if (!match) fail(`Could not read "version" from ${metadata.filename}`)
-  return match[1].trim().replace(/^['"]|['"]$/g, '')
+  if (metadata) {
+    const match = (await readFile(metadata.path, 'utf8')).match(/^version:\s*(.+)$/m)
+    if (!match) fail(`Could not read "version" from ${metadata.filename}`)
+    return match[1].trim().replace(/^['"]|['"]$/g, '')
+  }
+
+  const latestJson = files.find((file) => file.filename === 'latest.json')
+  if (latestJson) {
+    let parsed
+    try {
+      parsed = JSON.parse(await readFile(latestJson.path, 'utf8'))
+    } catch {
+      fail('Could not read "version" from latest.json')
+    }
+    const version = typeof parsed?.version === 'string' ? parsed.version.replace(/^v/, '').trim() : ''
+    if (!version) fail('Could not read "version" from latest.json')
+    return version
+  }
+
+  fail('No electron-updater latest*.yml or Tauri latest.json metadata file found in the directory')
 }
 
 async function callApi(serverUrl, path, apiKey, body) {

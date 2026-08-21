@@ -1,6 +1,7 @@
 # Shukka
 
-Self-hosted release manager for Electron apps that update through `electron-updater` and S3.
+Self-hosted release manager for Electron and Tauri apps that update through
+`electron-updater` or Tauri plugin-updater and S3.
 
 Create an app, point it at a bucket, and Shukka gives you a public update feed per channel,
 API keys for CI, and a record of every version you have shipped.
@@ -12,7 +13,8 @@ API keys for CI, and a record of every version you have shipped.
 - **Uploads over presigned URLs** — installers go straight from CI to S3; Shukka never proxies the bytes.
 - **Public feed** — `electron-updater` reads `/api/update/{app}/{channel}` with no credentials, exactly as
   it reads a generic provider. Metadata is served byte-for-byte as `electron-builder` wrote it.
-- **GitHub Action** — one step publishes an `electron-builder` output directory.
+- **Tauri feed** — plugin-updater reads JSON at `/api/update/{app}/{channel}`.
+- **GitHub Action** — one step publishes an `electron-builder` or Tauri output directory.
 - **Agent skill** — `.agents/skills/shukka-ops/` teaches an agent to drive the API.
 
 ## Run it
@@ -47,7 +49,7 @@ the SQLite database and the key that encrypts stored S3 secrets — lives in `/d
 Create an app in the panel, then an API key on its **API keys** tab. In CI:
 
 ```yaml
-- uses: akarachen/shukka@main
+- uses: shukka-app/shukka@v1.0.2
   with:
     server-url: ${{ secrets.SHUKKA_URL }}
     api-key: ${{ secrets.SHUKKA_API_KEY }}
@@ -56,8 +58,9 @@ Create an app in the panel, then an API key on its **API keys** tab. In CI:
     directory: dist
 ```
 
-Point the whole `electron-builder` output directory at it — installers, `.blockmap` files
-and every `latest*.yml`. The version is read from the metadata unless you pass `version`.
+Point the whole `electron-builder` or Tauri output directory at it — installers, `.blockmap`
+files, `latest*.yml`, or Tauri `latest.json` and `.sig` files. The version is read from the
+yml or `latest.json` unless you pass `version`.
 
 Outside GitHub Actions, the same uploader runs standalone:
 
