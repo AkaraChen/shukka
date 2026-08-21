@@ -110,7 +110,7 @@ Out of scope until explicitly specified: anything not yet accepted in a PRD.
 - 推送 git 标签 `vMAJOR.MINOR.PATCH`（可带预发布后缀）会把仓库根 `Dockerfile` 构建的镜像发布到 `ghcr.io/{owner}/{repo}`。PR 不发镜像；`main` 继续发 `latest` 与 `sha-*`。
 - 正式版镜像 tag：`{version}`、`{major}.{minor}`、major ≥ 1 时的 `{major}`，以及 `latest`。预发布只发布 `{version}`（含后缀），不移动 `latest` 或 major/minor 浮动 tag。major 为 0 时不发布 `:0`。
 - 公开仓库的镜像可匿名拉取。构建失败不推送。见 `docs/prd/container-image.md`、`docs/adr/ghcr-on-semver-tag.md`。
-- PR 与 `main` 上的 `.github/workflows/docker-test.yml` 用仓库根 `Dockerfile` 构建镜像（不推送），按 `docker run -p 3000:3000 -v …:/data` 启动，走通 health、首次 setup、发版、feed、卷在重启后仍在、以及 host-platform electron-updater / rollback。见 `docs/adr/docker-image-ci.md`。
+- PR 与 `main` 上的 `.github/workflows/docker-test.yml` 用仓库根 `Dockerfile` 构建镜像（不推送），按 `docker run -p 3000:3000 -v …:/data` 启动，走通 health、首次 setup、发版、feed、卷在重启后仍在、以及 host-platform electron-updater / rollback。同一 workflow 还按 `deploy/compose.yaml` 与 `deploy/ansible/playbook.yml` 拉起示例栈，走通 health、setup、发版、feed 与重启后 feed 仍在（不重复 updater）。见 `docs/adr/docker-image-ci.md`、`docs/adr/compose-and-ansible.md`。
 
 ## System-wide invariants
 
@@ -141,7 +141,7 @@ Out of scope until explicitly specified: anything not yet accepted in a PRD.
 
 - Repository agent entrypoint is root `AGENTS.md` (`CLAUDE.md` is a symlink to it).
 - Feature development workflow skill lives at `.agents/skills/feature-dev/` (also linked from `.claude/skills/`).
-- Self-host operator guide lives at `docs/prd/deploy.md`; runtime choice at `docs/adr/self-host-runtime.md`.
+- Self-host operator guide lives at `docs/prd/deploy.md`; Compose / Ansible examples at `deploy/` (`docs/prd/deploy-examples.md`); runtime choice at `docs/adr/self-host-runtime.md`.
 - Platform operation skill lives at `.agents/skills/shukka-ops/`; it must stay consistent with the HTTP contracts above.
 - Publish protocol skill lives at `skills/shukka-publish/` (installable via the skills CLI); it is generic — no per-server/app/channel facts — and must stay consistent with the upload API contract above.
 - Commit attempts should re-check the working tree against this specification and relevant PRDs/ADRs before landing.
@@ -163,7 +163,10 @@ Out of scope until explicitly specified: anything not yet accepted in a PRD.
   and `docs/adr/updater-kind-on-app.md`; Tauri process check/download per
   `docs/adr/tauri-updater-e2e.md`.
 - Self-host deploy documented per `docs/prd/deploy.md` and `docs/adr/self-host-runtime.md`
-  (Docker + persistent data volume; no new runtime code).
+  (Docker + persistent data volume; no new runtime code). Compose and Ansible
+  examples live in `deploy/` per `docs/prd/deploy-examples.md` and
+  `docs/adr/compose-and-ansible.md`.
 - Runtime image published to GHCR on `v*.*.*` tags per `docs/prd/container-image.md`
   and `docs/adr/ghcr-on-semver-tag.md`. PR / `main` builds that image and walks the
-  container path per `docs/adr/docker-image-ci.md` (no push).
+  container path per `docs/adr/docker-image-ci.md` (no push), including the
+  Compose and Ansible example stacks.

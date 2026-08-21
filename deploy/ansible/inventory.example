@@ -1,0 +1,6 @@
+# Copy to inventory.ini and point at the host that should run the stack.
+#
+#   cp deploy/ansible/inventory.example inventory.ini
+#   ansible-playbook -i inventory.ini deploy/ansible/playbook.yml
+
+updates.example.com ansible_user=deploy

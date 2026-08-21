@@ -50,7 +50,9 @@ The runtime image `ghcr.io/shukka-app/shukka` is published by
 `.github/workflows/docker.yml` on `main` and on `v*.*.*` tags.
 `.github/workflows/docker-test.yml` builds that Dockerfile on PR / `main`
 (no push) and walks health, setup, publish, feed, volume restart, and
-electron-updater / rollback against the container.
+electron-updater / rollback against the container. The same workflow starts
+`deploy/compose.yaml` and `deploy/ansible/playbook.yml` and walks health,
+setup, publish, and feed.
 
 The GitHub Action is a node24 JavaScript action (`scripts/shukka-upload.mjs`); it
 does not call bash. CI matrices MinIO and the JuiceFS S3 gateway on Ubuntu

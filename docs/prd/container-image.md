@@ -17,7 +17,7 @@
 4. 公开仓库的镜像可匿名拉取，与现有 `docker run ghcr.io/shukka-app/shukka` 文档一致。
 5. 构建失败则不推送；workflow 必须通过 actionlint。
 6. 与 `main` 上已有的多架构（amd64+arm64）发布共用同一条 Docker workflow，避免第二条 job 覆盖 `latest`。`main` 继续发 `latest` 与 `sha-*`；PR 不发镜像。
-7. PR 与 `main` 用单独的 Docker test workflow 构建同一份 `Dockerfile`（不推送），按文档化的 `docker run` 走通 health、setup、发版、feed、卷重启、electron-updater / rollback。见 `docs/adr/docker-image-ci.md`。
+7. PR 与 `main` 用单独的 Docker test workflow 构建同一份 `Dockerfile`（不推送），按文档化的 `docker run`、`deploy/compose.yaml` 与 `deploy/ansible/playbook.yml` 走通 health、setup、发版、feed；`docker run` 还覆盖卷重启与 electron-updater / rollback。见 `docs/adr/docker-image-ci.md`。
 
 ## Non-goals
 
