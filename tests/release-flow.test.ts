@@ -23,12 +23,13 @@ vi.mock('~/lib/storage.ts', async (importOriginal) => {
 
 const { eq } = await import('drizzle-orm')
 const { db } = await import('~/db/index.ts')
-const { apps, versions } = await import('~/db/schema.ts')
+const { apps, pendingUploads, versions } = await import('~/db/schema.ts')
 const { createApp, DEFAULT_CHANNEL } = await import('~/server/apps.ts')
 const { createChannel, deleteChannel, getChannel } = await import('~/server/channels.ts')
 const { deleteVersion, finalizeUpload, initUpload } = await import('~/server/releases.ts')
 const { resolveFeedRequest } = await import('~/server/feed.ts')
 const { ShukkaError } = await import('~/lib/errors.ts')
+const { deleteObjects, isS3NotFound } = await import('~/lib/storage.ts')
 
 const ORIGIN = 'https://updates.test'
 
@@ -195,6 +196,86 @@ describe('release flow', () => {
     const app = await createApp(appInput)
     await publish(app, 'stable', '1.0.0')
     await expect(publish(app, 'stable', '1.0.0')).rejects.toThrow(/already exists/)
+  })
+
+  it('rejects a second init while a pending upload is in flight', async () => {
+    const app = await createApp(appInput)
+    await initUpload(app, {
+      channel: 'stable',
+      version: '1.0.1',
+      files: [{ filename: 'latest.yml' }],
+    })
+    await expect(
+      initUpload(app, {
+        channel: 'stable',
+        version: '1.0.1',
+        files: [{ filename: 'latest.yml' }],
+      }),
+    ).rejects.toMatchObject({
+      name: 'ShukkaError',
+      code: 'conflict',
+      message: 'Version 1.0.1 already has a pending upload',
+    })
+  })
+
+  it('allows re-init after an expired pending upload is cleaned up', async () => {
+    const app = await createApp(appInput)
+    const first = await initUpload(app, {
+      channel: 'stable',
+      version: '1.0.1',
+      files: [{ filename: 'latest.yml' }],
+    })
+    db.update(pendingUploads).set({ expiresAt: 1 }).where(eq(pendingUploads.id, first.uploadId)).run()
+    await expect(
+      initUpload(app, {
+        channel: 'stable',
+        version: '1.0.1',
+        files: [{ filename: 'latest.yml' }],
+      }),
+    ).resolves.toMatchObject({ files: expect.any(Array) })
+  })
+
+  it('maps a unique version insert during finalize to conflict', async () => {
+    const app = await createApp(appInput)
+    const init = await initUpload(app, {
+      channel: 'stable',
+      version: '1.0.1',
+      files: [{ filename: 'latest.yml' }, { filename: 'Acme-Setup-1.0.1.exe' }],
+    })
+    objects.set(init.files[0].key, metadataFor('1.0.1', 'Acme-Setup-1.0.1.exe'))
+    objects.set(init.files[1].key, 'binary')
+    const channel = getChannel(app.id, 'stable')
+    db.insert(versions)
+      .values({
+        appId: app.id,
+        channelId: channel.id,
+        version: '1.0.1',
+        createdAt: Math.floor(Date.now() / 1000),
+      })
+      .run()
+
+    await expect(finalizeUpload(app, init.uploadId)).rejects.toMatchObject({
+      name: 'ShukkaError',
+      code: 'conflict',
+      message: 'Version already exists',
+    })
+  })
+
+  it('keeps the version row when storage delete fails', async () => {
+    const app = await createApp(appInput)
+    const published = await publish(app, 'stable', '1.0.0')
+    vi.mocked(deleteObjects).mockRejectedValueOnce(new Error('s3 down'))
+    await expect(deleteVersion(app, published.result.versionId)).rejects.toThrow()
+    expect(db.select().from(versions).where(eq(versions.id, published.result.versionId)).get()).toBeDefined()
+  })
+
+  it('treats only S3 not-found shapes as a missing object', () => {
+    expect(isS3NotFound({ name: 'NotFound' })).toBe(true)
+    expect(isS3NotFound({ name: 'NoSuchKey' })).toBe(true)
+    expect(isS3NotFound({ $metadata: { httpStatusCode: 404 } })).toBe(true)
+    expect(isS3NotFound({ name: 'TimeoutError' })).toBe(false)
+    expect(isS3NotFound({ $metadata: { httpStatusCode: 403 } })).toBe(false)
+    expect(isS3NotFound(new Error('network'))).toBe(false)
   })
 
   it('allows the same version string on a different channel', async () => {

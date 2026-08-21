@@ -9,6 +9,7 @@ import {
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { dataDir } from '~/db/index.ts'
+import { ShukkaError } from '~/lib/errors.ts'
 
 /**
  * Encryption key for S3 secrets. Generated on first boot into the data directory,
@@ -37,10 +38,16 @@ export function encryptSecret(plaintext: string): string {
 
 export function decryptSecret(encoded: string): string {
   const [iv, tag, ciphertext] = encoded.split('.')
-  if (!iv || !tag || !ciphertext) throw new Error('Malformed encrypted secret')
-  const decipher = createDecipheriv('aes-256-gcm', encryptionKey, Buffer.from(iv, 'base64'))
-  decipher.setAuthTag(Buffer.from(tag, 'base64'))
-  return Buffer.concat([decipher.update(Buffer.from(ciphertext, 'base64')), decipher.final()]).toString('utf8')
+  if (!iv || !tag || !ciphertext) {
+    throw new ShukkaError('storage_error', 'Stored S3 secret cannot be decrypted')
+  }
+  try {
+    const decipher = createDecipheriv('aes-256-gcm', encryptionKey, Buffer.from(iv, 'base64'))
+    decipher.setAuthTag(Buffer.from(tag, 'base64'))
+    return Buffer.concat([decipher.update(Buffer.from(ciphertext, 'base64')), decipher.final()]).toString('utf8')
+  } catch {
+    throw new ShukkaError('storage_error', 'Stored S3 secret cannot be decrypted')
+  }
 }
 
 export function sha256(value: string): string {

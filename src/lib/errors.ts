@@ -32,6 +32,15 @@ export class ShukkaError extends Error {
   }
 }
 
+export function isUniqueConstraint(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { code: unknown }).code === 'SQLITE_CONSTRAINT_UNIQUE'
+  )
+}
+
 export function jsonError(error: unknown): Response {
   if (error instanceof ShukkaError) {
     return Response.json(

@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX `pending_uploads_channel_version_unique` ON `pending_uploads` (`channel_id`,`version`);

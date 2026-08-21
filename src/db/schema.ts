@@ -150,20 +150,24 @@ export const apiKeys = sqliteTable(
 )
 
 /** An upload between init and finalize; invisible to the update feed. */
-export const pendingUploads = sqliteTable('pending_uploads', {
-  id: text('id').primaryKey(),
-  appId: integer('app_id')
-    .notNull()
-    .references(() => apps.id, { onDelete: 'cascade' }),
-  channelId: integer('channel_id')
-    .notNull()
-    .references(() => channels.id, { onDelete: 'cascade' }),
-  version: text('version').notNull(),
-  /** JSON array of { filename, s3Key, size }. */
-  files: text('files').notNull(),
-  createdAt: integer('created_at').notNull().default(now),
-  expiresAt: integer('expires_at').notNull(),
-})
+export const pendingUploads = sqliteTable(
+  'pending_uploads',
+  {
+    id: text('id').primaryKey(),
+    appId: integer('app_id')
+      .notNull()
+      .references(() => apps.id, { onDelete: 'cascade' }),
+    channelId: integer('channel_id')
+      .notNull()
+      .references(() => channels.id, { onDelete: 'cascade' }),
+    version: text('version').notNull(),
+    /** JSON array of { filename, s3Key, size }. */
+    files: text('files').notNull(),
+    createdAt: integer('created_at').notNull().default(now),
+    expiresAt: integer('expires_at').notNull(),
+  },
+  (t) => [uniqueIndex('pending_uploads_channel_version_unique').on(t.channelId, t.version)],
+)
 
 export type App = typeof apps.$inferSelect
 export type Channel = typeof channels.$inferSelect
