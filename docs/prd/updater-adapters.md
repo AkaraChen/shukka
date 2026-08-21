@@ -1,5 +1,7 @@
 # PRD: 更新系统 adapter——创建时选 Electron / Tauri，Integration 跟着变
 
+**Status: shipped.**
+
 ## Problem
 
 Shukka 的公开 feed、上传校验和接入文档都按 electron-updater 写死。要接 Tauri plugin-updater（以及以后别的客户端）时，不能把「yml 原文透传」当成全系统不变量，也不能让用户在接入页自己改协议。
@@ -41,12 +43,12 @@ Shukka 的公开 feed、上传校验和接入文档都按 electron-updater 写�
 
 ## Acceptance criteria
 
-- [ ] 向导第一步有 Electron / Tauri 图标按钮；未选不能进入第二步。
-- [ ] 未手改 slug 时，中文名变成拼音 slug，英文名变成 kebab-case；手改过后不再覆盖。
-- [ ] 创建请求带 `updaterKind`；省略时 API 默认 `electron`（兼容已有脚本）。
-- [ ] Integration 随 app.kind 切换；Settings 无该字段。
-- [ ] Electron app 的 feed / 上传 / e2e 行为不变。
-- [ ] Tauri app 的 feed 在 `/api/update/{slug}/{channel}` 或 `.../latest.json` 返回静态 JSON；制品仍 302。
+- [x] 向导第一步有 Electron / Tauri 图标按钮；未选不能进入第二步。
+- [x] 未手改 slug 时，中文名变成拼音 slug，英文名变成 kebab-case；手改过后不再覆盖。
+- [x] 创建请求带 `updaterKind`；省略时 API 默认 `electron`（兼容已有脚本）。
+- [x] Integration 随 app.kind 切换；Settings 无该字段。
+- [x] Electron app 的 feed / 上传 / e2e 行为不变。
+- [x] Tauri app 的 feed 在 `/api/update/{slug}/{channel}` 或 `.../latest.json` 返回静态 JSON；制品仍 302。
 - [ ] 真实 Tauri 进程对已发布版本 check + download + minisign 成功；draft 对 updater 不可见。
 
 ## Resolved product decisions

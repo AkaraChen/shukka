@@ -1,5 +1,7 @@
 # ADR: GitHub Action 用 composite + 仓库内 Node 脚本
 
+> Superseded by [javascript-github-action.md](javascript-github-action.md). Windows 自建 runner 只有 MinGit 时 `shell: bash` 无法启动。保留本文作历史记录。
+
 ## Context
 
 需要一个官方 action 让用户在 CI 里把 electron-builder 产物发到 Shukka，可通过 `uses: akarachen/shukka@main` 引用；要求能用 act 本地测试、actionlint 静态检查。

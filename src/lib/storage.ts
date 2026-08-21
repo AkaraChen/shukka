@@ -62,12 +62,23 @@ export function presignGet(s3: S3Settings, key: string): Promise<string> {
   })
 }
 
+export function isS3NotFound(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return false
+  const named = error as { name?: unknown; $metadata?: { httpStatusCode?: unknown } }
+  return (
+    named.name === 'NotFound' ||
+    named.name === 'NoSuchKey' ||
+    named.$metadata?.httpStatusCode === 404
+  )
+}
+
 export async function headObject(s3: S3Settings, key: string): Promise<{ size: number } | null> {
   try {
     const result = await client(s3).send(new HeadObjectCommand({ Bucket: s3.bucket, Key: key }))
     return { size: result.ContentLength ?? 0 }
-  } catch {
-    return null
+  } catch (error) {
+    if (isS3NotFound(error)) return null
+    throw new ShukkaError('storage_error', 'Cannot reach storage')
   }
 }
 
@@ -81,10 +92,13 @@ export async function getObjectText(s3: S3Settings, key: string): Promise<string
 }
 
 export async function deleteObjects(s3: S3Settings, keys: string[]): Promise<void> {
+  if (keys.length === 0) return
   const s3Client = client(s3)
-  await Promise.all(
-    keys.map((Key) => s3Client.send(new DeleteObjectCommand({ Bucket: s3.bucket, Key })).catch(() => undefined)),
-  )
+  try {
+    await Promise.all(keys.map((Key) => s3Client.send(new DeleteObjectCommand({ Bucket: s3.bucket, Key }))))
+  } catch {
+    throw new ShukkaError('storage_error', 'Failed to delete objects from storage')
+  }
 }
 
 /**

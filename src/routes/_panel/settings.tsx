@@ -2,6 +2,8 @@ import { useMutation } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { Check } from 'lucide-react'
 import { useState } from 'react'
+import { siGithub } from 'simple-icons'
+import { repository, version as appVersion } from '../../../package.json'
 import { PageHeader } from '~/components/page-header.tsx'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
@@ -16,7 +18,10 @@ function SettingsPage() {
   return (
     <>
       <PageHeader title={t.settings.title} />
-      <PasswordCard />
+      <div className="grid max-w-2xl gap-10">
+        <PasswordCard />
+        <AboutSection />
+      </div>
     </>
   )
 }
@@ -46,7 +51,7 @@ function PasswordCard() {
   }
 
   return (
-    <section className="max-w-2xl">
+    <section>
       <h2 className="text-base">{t.settings.changePassword}</h2>
       <p className="mt-1 text-sm text-muted-foreground">{t.settings.changePasswordDetail}</p>
 
@@ -81,6 +86,26 @@ function PasswordCard() {
           {changePassword.isPending ? t.settings.changing : t.settings.changePassword}
         </Button>
       </div>
+    </section>
+  )
+}
+
+const githubUrl = repository.url.replace(/^git\+/, '').replace(/\.git$/, '')
+
+function AboutSection() {
+  const t = useT()
+  return (
+    <section>
+      <h2 className="text-base">{t.settings.about}</h2>
+      <p className="mt-1 font-mono text-sm tabular-nums text-muted-foreground">{t.settings.version(appVersion)}</p>
+      <Button variant="outline" size="sm" className="mt-5" asChild>
+        <a href={githubUrl} target="_blank" rel="noreferrer">
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d={siGithub.path} />
+          </svg>
+          {t.settings.github}
+        </a>
+      </Button>
     </section>
   )
 }

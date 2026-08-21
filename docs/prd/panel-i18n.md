@@ -1,5 +1,7 @@
 # PRD: 面板国际化（English + 简体中文）
 
+**Status: shipped.** Panel language switcher now lives in the role menu (`docs/prd/view-roles.md`); setup / login still use the standalone switcher.
+
 ## Problem
 
 面板所有 UI 文案硬编码为英文：setup、login、各管理页、按钮、表单校验提示、错误展示、日期显示。对中文母语的管理员不够友好；文案散落在组件中，没有统一的字符串层，修改文案或新增语言都要逐文件翻找。
@@ -51,11 +53,11 @@
 
 ## Acceptance criteria
 
-- [ ] setup、login 与全部面板页面无硬编码英文文案；所有 UI 字符串来自字典。
-- [ ] English 字典为源语言；简体中文字典与 English 字典键一一对应，缺键在编译期即类型错误。
-- [ ] setup / login 页右上角有语言切换器；面板页侧边栏左下角有语言切换器。
-- [ ] 切换语言后当前页面立即以新语言渲染，无需手动刷新。
-- [ ] 语言选择写入 cookie；刷新与重开浏览器后保持；SSR 首屏 `<html lang>` 与内容语言一致，无闪烁。
-- [ ] 固定错误码集中的每个码在两种语言下都有翻译；未知错误码回退展示服务端英文 message。
-- [ ] 日期与相对时间按当前语言渲染（如 English 的 "3 days ago" 与简体中文的 "3 天前"）。
-- [ ] 服务端 API 响应格式与错误码集不变。
+- [x] setup、login 与全部面板页面无硬编码英文文案；所有 UI 字符串来自字典。
+- [x] English 字典为源语言；简体中文字典与 English 字典键一一对应，缺键在编译期即类型错误。
+- [x] setup / login 页右上角有语言切换器；面板页语言切换在侧栏底部角色菜单内。
+- [x] 切换语言后当前页面立即以新语言渲染，无需手动刷新。
+- [x] 语言选择写入 cookie；刷新与重开浏览器后保持；SSR 首屏 `<html lang>` 与内容语言一致，无闪烁。
+- [x] 固定错误码集中的每个码在两种语言下都有翻译；未知错误码回退展示服务端英文 message。
+- [x] 日期与相对时间按当前语言渲染（如 English 的 "3 days ago" 与简体中文的 "3 天前"）。
+- [x] 服务端 API 响应格式与错误码集不变。

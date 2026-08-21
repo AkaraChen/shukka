@@ -18,7 +18,7 @@ Shukka 是单管理员自托管服务。仓库已有 `Dockerfile` 和 README 里
 
 ## Non-goals
 
-- 本 PRD 不改代码：不新增 Docker Compose、systemd unit、健康检查路由、`SHUKKA_PUBLIC_URL` 或自动发布镜像的 workflow。
+- 本 PRD 不改代码：不新增 Docker Compose、systemd unit 或 `SHUKKA_PUBLIC_URL`。健康探针与 GHCR 发布见 `docs/prd/health-endpoint.md`、`docs/prd/container-image.md`。
 - 不把 Shukka 做成多实例/HA，也不引入 Postgres。
 - 不写「如何把桌面应用接到 feed」——那是 shukka-ops，不是本机部署。
 - 不提供托管 SaaS。
@@ -34,14 +34,13 @@ Shukka 是单管理员自托管服务。仓库已有 `Dockerfile` 和 README 里
 ### 运维：用 Docker 部署（主路径）
 
 1. 准备一台能跑 Docker 的 Linux 主机、一个域名、以及 S3 兼容存储（创建 app 时再用，不是启动前置）。
-2. 在仓库根构建并运行（工作目录必须是应用根，迁移读 `./drizzle`）：
+2. 拉公开镜像并运行（工作目录必须是应用根，迁移读 `./drizzle`）。没有镜像时在仓库根 `docker build -t shukka .`，把下面的镜像名换成 `shukka`：
 
 ```bash
-docker build -t shukka .
 docker run -d --name shukka --restart unless-stopped \
   -p 127.0.0.1:3000:3000 \
   -v shukka-data:/data \
-  shukka
+  ghcr.io/shukka-app/shukka
 ```
 
 3. 反代到 `127.0.0.1:3000`，对外只暴露 HTTPS。
@@ -49,7 +48,7 @@ docker run -d --name shukka --restart unless-stopped \
 5. 创建 app 并做 S3 写探测；探测失败不会落库。
 6. 用下面「探活 / 冒烟」确认三类 HTTP 面都通。
 
-README 里的 `ghcr.io/akarachen/shukka` 是预定镜像名。仓库当前没有把镜像推到 GHCR 的 workflow；拉取失败时用上面的 `docker build`。
+公开镜像是 `ghcr.io/shukka-app/shukka`（semver 标签发布，见 `docs/prd/container-image.md`）。拉取失败时在仓库根 `docker build -t shukka .`。
 
 ### 运维：从源码 + systemd
 
@@ -116,7 +115,7 @@ Docker 卷默认在 `/data/shukka.db`。删的是密码与登录态，app / chan
   - Electron：yml 原文透传、制品文件名相对；把 `https://…/api/update/{app}/{channel}` 写进 electron-builder 即可。
   - Tauri：`latest.json` 的 `url` 按本次请求的 origin 生成。`curl -sS https://your.host/api/update/{app}/{channel}` 若看到 `http://` 制品 URL，让反代对后端也走 TLS，或给进程配 `NITRO_SSL_CERT` / `NITRO_SSL_KEY`。
 - Tauri 生产客户端默认要求 HTTPS（`docs/adr/updater-kind-on-app.md`）。
-- 登录接口目前无限速。不要把 setup / login 裸露在无防护的公网而不做 TLS。
+- 登录失败按来源 IP 限速（15 分钟 10 次）。不要把 setup / login 裸露在无防护的公网而不做 TLS。
 
 ## 对象存储
 
@@ -147,9 +146,12 @@ sqlite3 /data/shukka.db ".backup /tmp/shukka-backup.db"
 
 ## 探活 / 冒烟
 
-没有独立 `/health`。CI 用未鉴权的 session 探测进程是否起来：
+编排器用 `GET /api/health`（`200 { status: "ok", db: "ok" }`，SQLite 不可达则 `503`）。面板初始化态仍看 session：
 
 ```bash
+curl -sS "$SHUKKA_URL/api/health"
+# {"status":"ok","db":"ok"}
+
 curl -sS "$SHUKKA_URL/api/admin/session"
 # {"initialized":false,"authenticated":false}   首次
 # {"initialized":true,"authenticated":false}    已设密未登录
@@ -189,7 +191,7 @@ curl -sS "$SHUKKA_URL/api/admin/session"
 - [x] 按主路径（Docker + `/data` 卷）可以从零启动，首次打开进入 setup。
 - [x] 文档列出的环境变量与代码 / Nitro 运行时一致；没有把 S3 或管理员密码写成必填环境变量。
 - [x] 备份说明包含 SQLite **和** `encryption.key`；只备份其一被标为失败模式。
-- [x] 探活用 `GET /api/admin/session`，与 `.github/workflows/action-test.yml` 一致。
+- [x] 探活用 `GET /api/health`；初始化态仍可用 `GET /api/admin/session`。
 - [x] 写明 serverless / 无持久盘 / 多副本 SQLite 不适合。
 - [x] 写明 cwd 与 `./drizzle` 自动迁移的关系。
 
@@ -197,5 +199,5 @@ curl -sS "$SHUKKA_URL/api/admin/session"
 
 - 主路径是自建单机 Docker，不是 PaaS 优先。
 - 管理员密码只在面板首次设置，不从环境变量注入（与 `docs/adr/auth-model.md` 一致）。
-- 不在本轮加健康检查路由、compose 文件或 GHCR 发布流水线。
+- 不在本轮加 compose 文件。健康探针与 GHCR 发布已另立 PRD。
 - Tauri 在反代后 origin 为 http 的问题按运行时限制记录，不发明 `SHUKKA_PUBLIC_URL`。

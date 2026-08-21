@@ -14,6 +14,8 @@ on:
       - tests/e2e/**
       - src/server/updaters/**
       - src/lib/tauri-target.ts
+      - src/lib/storage.ts
+      - scripts/juicefs-dev.mjs
       - .github/scripts/**
       - .github/workflows/action-test.yml
   pull_request:
@@ -27,42 +29,52 @@ on:
       - tests/e2e/**
       - src/server/updaters/**
       - src/lib/tauri-target.ts
+      - src/lib/storage.ts
+      - scripts/juicefs-dev.mjs
       - .github/scripts/**
       - .github/workflows/action-test.yml
 
 permissions:
   contents: read
 
-# Runs the real publish path against a real MinIO bucket.
+# Runs the real publish path against each supported S3-compatible backend
+# (MinIO and the JuiceFS S3 gateway) via a GitHub Actions matrix.
 #
-# Locally with act: start MinIO and Shukka on the host first, then
+# Locally with act: start one S3 backend and Shukka on the host first, then
 #   act workflow_dispatch -W .github/workflows/action-test.yml \
 #     --env SHUKKA_URL=http://host.docker.internal:3777 \
-#     --env MINIO_URL=http://localhost:9000
+#     --env MINIO_URL=http://localhost:9000 \
+#     --matrix s3:minio
 # SHUKKA_URL is dialled from inside the act container, while MINIO_URL is the
 # endpoint the host-side Shukka process uses - hence the different hostnames.
 # The two setup steps below are skipped under act since the host provides both.
+#
+# publish-windows starts MinIO from the official binary (hosted Windows has no
+# Docker) and exercises the JavaScript action — no bash — plus electron-updater.
+# JuiceFS stays on the Ubuntu matrix: its CI gateway is the Docker image used
+# by scripts/juicefs-dev.mjs.
 jobs:
   publish:
+    name: Publish (${{ matrix.s3 }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        s3: [minio, juicefs]
     env:
       SHUKKA_URL: ${{ vars.SHUKKA_URL || 'http://localhost:3000' }}
       MINIO_URL: ${{ vars.MINIO_URL || 'http://localhost:9000' }}
+      S3_BACKEND: ${{ matrix.s3 }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7.0.0
         with:
           node-version: '24'
 
-      - name: Start MinIO
+      - name: Start ${{ matrix.s3 }}
         if: ${{ !env.ACT }}
-        run: |
-          docker run -d --name minio -p 9000:9000 \
-            -e MINIO_ROOT_USER=shukka -e MINIO_ROOT_PASSWORD=shukkasecret \
-            quay.io/minio/minio server /data
-          node .github/scripts/wait-for.mjs "$MINIO_URL/minio/health/live"
-          docker exec minio mkdir -p /data/releases
+        run: node .github/scripts/start-s3.mjs ${{ matrix.s3 }}
 
       - name: Build and start Shukka
         if: ${{ !env.ACT }}
@@ -112,16 +124,101 @@ jobs:
           E2E_VERSION: ${{ steps.publish.outputs.version }}
           ELECTRON_DISABLE_SANDBOX: '1'
 
-  tauri-updater:
-    runs-on: ubuntu-latest
+      - name: electron-updater rollback
+        run: xvfb-run -a node tests/e2e/run-rollback.mjs
+        env:
+          SHUKKA_URL: ${{ env.SHUKKA_URL }}
+          SHUKKA_API_KEY: ${{ steps.provision.outputs.api-key }}
+          SHUKKA_APP: demo-app
+          SHUKKA_CHANNEL: stable
+          ELECTRON_DISABLE_SANDBOX: '1'
+
+  publish-windows:
+    name: Publish on Windows
+    runs-on: windows-latest
     timeout-minutes: 40
     env:
       SHUKKA_URL: ${{ vars.SHUKKA_URL || 'http://localhost:3000' }}
       MINIO_URL: ${{ vars.MINIO_URL || 'http://localhost:9000' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Start MinIO
+        if: ${{ !env.ACT }}
+        run: node .github/scripts/start-minio.mjs
+
+      - name: Build and start Shukka
+        if: ${{ !env.ACT }}
+        run: |
+          npm ci
+          npm run build
+          node .github/scripts/start-server.mjs
+
+      - name: Provision app, bucket and API key
+        id: provision
+        run: node .github/scripts/provision.mjs
+
+      - name: Build a fake electron-builder release
+        run: node .github/scripts/fake-release.mjs out "2.0.${{ github.run_number }}"
+
+      - name: Publish with the action
+        id: publish
+        uses: ./
+        with:
+          server-url: ${{ env.SHUKKA_URL }}
+          api-key: ${{ steps.provision.outputs.api-key }}
+          app: demo-app
+          channel: stable
+          directory: out
+          release: true
+
+      - name: Verify the update feed serves the new version
+        run: node .github/scripts/verify-feed.mjs "${{ env.SHUKKA_URL }}/api/update/demo-app/stable" "${{ steps.publish.outputs.version }}"
+
+      - name: Install electron-updater e2e
+        run: npm ci --prefix tests/e2e
+
+      - name: electron-updater check and download
+        run: node tests/e2e/run.mjs
+        env:
+          SHUKKA_URL: ${{ env.SHUKKA_URL }}
+          SHUKKA_API_KEY: ${{ steps.provision.outputs.api-key }}
+          SHUKKA_APP: demo-app
+          SHUKKA_CHANNEL: stable
+          E2E_SKIP_PUBLISH: '1'
+          E2E_VERSION: ${{ steps.publish.outputs.version }}
+          ELECTRON_DISABLE_SANDBOX: '1'
+
+      - name: electron-updater rollback
+        run: node tests/e2e/run-rollback.mjs
+        env:
+          SHUKKA_URL: ${{ env.SHUKKA_URL }}
+          SHUKKA_API_KEY: ${{ steps.provision.outputs.api-key }}
+          SHUKKA_APP: demo-app
+          SHUKKA_CHANNEL: stable
+          ELECTRON_DISABLE_SANDBOX: '1'
+
+  tauri-updater:
+    name: Tauri updater (${{ matrix.s3 }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        s3: [minio, juicefs]
+    env:
+      SHUKKA_URL: ${{ vars.SHUKKA_URL || 'http://localhost:3000' }}
+      MINIO_URL: ${{ vars.MINIO_URL || 'http://localhost:9000' }}
+      S3_BACKEND: ${{ matrix.s3 }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: actions/setup-node@v7.0.0
         with:
           node-version: '24'
 
@@ -147,14 +244,9 @@ jobs:
             libatk-bridge2.0-0 \
             libgbm1
 
-      - name: Start MinIO
+      - name: Start ${{ matrix.s3 }}
         if: ${{ !env.ACT }}
-        run: |
-          docker run -d --name minio -p 9000:9000 \
-            -e MINIO_ROOT_USER=shukka -e MINIO_ROOT_PASSWORD=shukkasecret \
-            quay.io/minio/minio server /data
-          node .github/scripts/wait-for.mjs "$MINIO_URL/minio/health/live"
-          docker exec minio mkdir -p /data/releases
+        run: node .github/scripts/start-s3.mjs ${{ matrix.s3 }}
 
       - name: Build and start Shukka
         if: ${{ !env.ACT }}

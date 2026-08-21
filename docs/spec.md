@@ -26,6 +26,7 @@ Out of scope until explicitly specified: anything not yet accepted in a PRD.
 - **Data directory**: 服务持久化根目录（默认 `./data`，`SHUKKA_DATA_DIR` 可改；容器内默认 `/data`），含 SQLite 文件与自动生成的 S3 加密密钥。整目录即备份边界。
 - **Feature 质问**: the mandatory product-then-technical clarification loop driven by `$feature-dev` before implementation.
 - **PRD / ADR / Spec**: see documentation harness below.
+- **Runtime image**: GHCR 上的可部署镜像 `ghcr.io/{owner}/{repo}`（规范仓库为 `ghcr.io/shukka-app/shukka`），由 semver git 标签发布，与面向桌面应用的 GitHub JavaScript action 不是同一条发布面。
 
 ## Observable contracts
 
@@ -53,17 +54,24 @@ Out of scope until explicitly specified: anything not yet accepted in a PRD.
 ### App API（`/api/v1/apps/{appSlug}`）
 
 - 对外标识为 app slug、channel name、version 字符串；不暴露数字 id。
-- 鉴权：session 或绑定该 slug 的 API key（`requireAppActor`）。Key 可改该 app 设置、CRUD channel / version / note、设 `currentVersion`、读详情与趋势。Key 不可删 app、不可管理 API key。
+- 鉴权：session 或绑定该 slug 的 API key（`requireAppActor`）。Key 可改该 app 设置、CRUD channel / version / note、设 `currentVersion`、读详情与趋势。Key 不可删 app、不可管理 API key。`GET /api/v1/apps/{appSlug}` 仅对 session actor 返回 `keys`；以 API key 鉴权时省略该属性。
 - `PATCH .../channels/{channel}` 设 `currentVersion`：目标为 draft 时在同一事务写入 `releasedAt` 再切指针（promote）；目标为已发布版本则只切指针（回滚）。
 - 实例级（列/建 app、登录改密、存储探测）与 API key CRUD 仅 session，不在 key 能力面。
 - 公开 API 文档（`/api/v1/openapi.json`，经 `/docs` 渲染）只展示 API key（或 session）可调用的操作与公开 feed/notes；session-only 管理操作（删 app、API key 生命周期、实例级路由）不在文档中。
 - 面板 app 详情 **API docs** 入口打开 `/docs`：server route 用 cheerio 把本地 `redoc` standalone bundle 内联进自建 HTML 模板，`Redoc.init` 以 `specUrl` 让浏览器同源 fetch `/api/v1/openapi.json`（带 session cookie），整页无侧栏与顶栏（admin / developer）。HTML 静态、与 origin 无关，进程内组装一次缓存。点击在新浏览器标签打开，当前页标签不切换。未登录重定向到登录。Integration 的 HTTP API 接入说明提供同样打开新标签的按钮。
 - 制品字节永不经过 Shukka 进程（上传直传 S3，下载 302）。
-- 错误响应统一为 `{ error, message }`，`error` 取自固定码集：`unauthorized`、`forbidden`、`not_found`、`conflict`、`invalid_request`、`storage_error`、`metadata_error`。
+- 错误响应统一为 `{ error, message }`，`error` 取自固定码集：`unauthorized`、`forbidden`、`not_found`、`conflict`、`invalid_request`、`storage_error`、`metadata_error`、`rate_limited`。
+
+### Health（无鉴权）
+
+- `GET /api/health` 公开无鉴权，不依赖任何 app / channel / 登录态或 S3 配置；未初始化实例也返回 200。
+- 执行一次 SQLite 轻量查询（`SELECT 1`）作为依赖探针；成功返回 `200 { status: "ok", db: "ok" }`，SQLite 抛错返回 `503 { status: "degraded", db: "down" }`（不走业务错误信封 `{ error, message }`，不泄内部错误文本）。响应 `cache-control: no-store`。
+- 不探 S3（配置 per-app，无默认实例可探）；不在 `/api/v1/openapi.json` 公开文档中，与 session-only 管理路由同一处理。
 
 ### Panel
 
 - 除 setup/login 外的面板路由、`/docs` 与管理 API 均要求 session；未认证重定向到登录（未初始化时重定向到 setup）。
+- `POST /api/admin/login` 对每个来源 IP 的失败尝试做 15 分钟固定窗口限速（10 次）；超限返回 `rate_limited`（429）。成功登录重置该 IP 计数。
 - `POST /api/admin/storage/test` 对提交的 S3 配置做写探测（Put+Delete 探针对象）并返回 `{ ok: true }`，不落库；创建与编辑 app 保存前服务端始终重复同一探测，失败拒绝保存。
 - API key 明文仅在创建响应中出现一次，此后不可再取得。
 - S3 secret access key 加密存储，密钥在服务数据目录中自动生成。
@@ -89,9 +97,16 @@ Out of scope until explicitly specified: anything not yet accepted in a PRD.
 
 ### GitHub Action
 
-- 仓库根 `action.yml` 为 composite action，inputs：`server-url`、`api-key`、`app`、`channel`、`version`、`directory`、`create-channel`、`release`（默认 false，对应 finalize 的 draft；`true` 则立即上线）；将目录内构建产物完整发布为一个版本，outputs 为 `version` 与 `channel`。`version` 留空时从目录内 yml 读取。
+- 仓库根 `action.yml` 为 JavaScript action（`using: node24`，`main: scripts/shukka-upload.mjs`），inputs：`server-url`、`api-key`、`app`、`channel`、`version`、`directory`、`create-channel`、`release`（默认 false，对应 finalize 的 draft；`true` 则立即上线）；将目录内构建产物完整发布为一个版本，outputs 为 `version` 与 `channel`。`version` 留空时从目录内 `latest*.yml` 或 Tauri `latest.json` 读取。不调用 bash / pwsh / cmd。
 - `action.yml` 与仓库 workflow 必须通过 actionlint。
-- Feed e2e：在真实 MinIO + 已发布版本上，用 Electron library 拉起 `electron-updater`（generic provider）做 check + download + sha512；另用真实 Tauri 进程拉起 `tauri-plugin-updater` 做 check + download + minisign。两者都不测安装。见 `docs/adr/electron-updater-e2e.md`、`docs/adr/tauri-updater-e2e.md`。
+- Action e2e 必须在 GitHub-hosted `windows-latest` 上跑通同一条发布路径（init → 直传 → finalize → feed → 宿主平台 electron-updater）。
+- Feed e2e：在真实 MinIO + 已发布版本上，用 Electron library 拉起 `electron-updater`（generic provider）做 check + download + sha512；另用真实 Tauri 进程拉起 `tauri-plugin-updater` 做 check + download + minisign。两者都不测安装。回退 e2e（`tests/e2e/run-rollback.mjs`）连续发布两版后 `PATCH currentVersion` 指回旧已发布版本，确认 feed 与 electron-updater 看到旧版本，被切走的已发布制品仍按文件名 302。见 `docs/adr/electron-updater-e2e.md`、`docs/adr/tauri-updater-e2e.md`。
+
+### Runtime image
+
+- 推送 git 标签 `vMAJOR.MINOR.PATCH`（可带预发布后缀）会把仓库根 `Dockerfile` 构建的镜像发布到 `ghcr.io/{owner}/{repo}`。PR 不发镜像；`main` 继续发 `latest` 与 `sha-*`。
+- 正式版镜像 tag：`{version}`、`{major}.{minor}`、major ≥ 1 时的 `{major}`，以及 `latest`。预发布只发布 `{version}`（含后缀），不移动 `latest` 或 major/minor 浮动 tag。major 为 0 时不发布 `:0`。
+- 公开仓库的镜像可匿名拉取。构建失败不推送。见 `docs/prd/container-image.md`、`docs/adr/ghcr-on-semver-tag.md`。
 
 ## System-wide invariants
 
@@ -135,12 +150,15 @@ Out of scope until explicitly specified: anything not yet accepted in a PRD.
 - Panel, instance-level admin API, `/api/v1` App API, upload API and update feed live in one
   TanStack Start app (`src/routes/`), with domain services in `src/server/` and infrastructure
   in `src/lib/`. Nested `/api/admin/apps/:id` routes are gone.
-- GitHub Action at repository root `action.yml` + `scripts/shukka-upload.mjs`; agent skill at
+- GitHub Action is a node24 JavaScript action at repository root `action.yml` + `scripts/shukka-upload.mjs`; agent skill at
   `.agents/skills/shukka-ops/`.
-- Verified end to end against MinIO: publish through the action, HTTP feed + 302, and a
-  host-platform `electron-updater` check/download (`tests/e2e/`, `docs/adr/electron-updater-e2e.md`).
+- Verified end to end against MinIO: publish through the action, HTTP feed + 302, a
+  host-platform `electron-updater` check/download, and channel rollback via
+  `PATCH currentVersion` (`tests/e2e/`, `docs/adr/electron-updater-e2e.md`).
 - Updater adapters: App `updaterKind` (`electron` | `tauri`) per `docs/prd/updater-adapters.md`
   and `docs/adr/updater-kind-on-app.md`; Tauri process check/download per
   `docs/adr/tauri-updater-e2e.md`.
 - Self-host deploy documented per `docs/prd/deploy.md` and `docs/adr/self-host-runtime.md`
   (Docker + persistent data volume; no new runtime code).
+- Runtime image published to GHCR on `v*.*.*` tags per `docs/prd/container-image.md`
+  and `docs/adr/ghcr-on-semver-tag.md`.

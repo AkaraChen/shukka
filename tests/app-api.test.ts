@@ -12,6 +12,7 @@ const auth = await import('~/lib/auth.ts')
 const { createApp } = await import('~/server/apps.ts')
 const appRoute = await import('~/routes/api/v1/apps.$appSlug.ts')
 const keysRoute = await import('~/routes/api/v1/apps.$appSlug.keys.ts')
+const keyIdRoute = await import('~/routes/api/v1/apps.$appSlug.keys.$keyId.ts')
 
 type ServerRoute = {
   options: {
@@ -52,7 +53,7 @@ describe('app API auth matrix', () => {
   it('lets a bound API key read and patch the app, but not delete it or manage keys', async () => {
     const app = await makeApp('acme')
     const { plaintext, hash, hint } = auth.generateApiKey()
-    db.insert(apiKeys).values({ appId: app.id, name: 'ci', hash, hint }).run()
+    const key = db.insert(apiKeys).values({ appId: app.id, name: 'ci', hash, hint }).returning().get()
 
     const GET = routeHandler(appRoute.Route, 'GET')
     const ok = await GET({
@@ -62,7 +63,31 @@ describe('app API auth matrix', () => {
       params: { appSlug: 'acme' },
     })
     expect(ok.status).toBe(200)
-    expect(((await ok.json()) as { app: { slug: string } }).app.slug).toBe('acme')
+    const detail = (await ok.json()) as { app: { slug: string } }
+    expect(detail.app.slug).toBe('acme')
+    expect(detail).not.toHaveProperty('keys')
+
+    const PATCH = routeHandler(appRoute.Route, 'PATCH')
+    const patched = await PATCH({
+      request: new Request('https://shukka.test/api/v1/apps/acme', {
+        method: 'PATCH',
+        headers: { authorization: `Bearer ${plaintext}`, 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'Acme',
+          slug: 'acme',
+          s3Endpoint: null,
+          s3Region: 'us-east-1',
+          s3Bucket: 'releases',
+          s3Prefix: 'acme',
+          s3AccessKeyId: 'key',
+          s3SecretAccessKey: 'secret',
+          s3ForcePathStyle: false,
+        }),
+      }),
+      params: { appSlug: 'acme' },
+    })
+    expect(patched.status).toBe(200)
+    expect(((await patched.json()) as { app: { name: string } }).app.name).toBe('Acme')
 
     const DELETE = routeHandler(appRoute.Route, 'DELETE')
     const forbidden = await DELETE({
@@ -74,6 +99,25 @@ describe('app API auth matrix', () => {
     })
     expect(forbidden.status).toBe(403)
 
+    const GET_KEYS = routeHandler(keysRoute.Route, 'GET')
+    const keysDenied = await GET_KEYS({
+      request: new Request('https://shukka.test/api/v1/apps/acme/keys', {
+        headers: { authorization: `Bearer ${plaintext}` },
+      }),
+      params: { appSlug: 'acme' },
+    })
+    expect(keysDenied.status).toBe(403)
+
+    const DELETE_KEY = routeHandler(keyIdRoute.Route, 'DELETE')
+    const keyDeleteDenied = await DELETE_KEY({
+      request: new Request(`https://shukka.test/api/v1/apps/acme/keys/${key.id}`, {
+        method: 'DELETE',
+        headers: { authorization: `Bearer ${plaintext}` },
+      }),
+      params: { appSlug: 'acme', keyId: String(key.id) },
+    })
+    expect(keyDeleteDenied.status).toBe(403)
+
     const POST_KEY = routeHandler(keysRoute.Route, 'POST')
     const keyDenied = await POST_KEY({
       request: new Request('https://shukka.test/api/v1/apps/acme/keys', {
@@ -84,6 +128,49 @@ describe('app API auth matrix', () => {
       params: { appSlug: 'acme' },
     })
     expect(keyDenied.status).toBe(403)
+  })
+
+  it('includes key metadata on session app detail', async () => {
+    const app = await makeApp('acme')
+    const { hash, hint } = auth.generateApiKey()
+    db.insert(apiKeys).values({ appId: app.id, name: 'ci', hash, hint }).returning().get()
+    const token = auth.login('correct horse battery')
+    const GET = routeHandler(appRoute.Route, 'GET')
+    const listed = await GET({
+      request: new Request('https://shukka.test/api/v1/apps/acme', {
+        headers: { cookie: `${auth.SESSION_COOKIE}=${token}` },
+      }),
+      params: { appSlug: 'acme' },
+    })
+    expect(listed.status).toBe(200)
+    const body = (await listed.json()) as { keys: { hint: string }[] }
+    expect(Array.isArray(body.keys)).toBe(true)
+    expect(body.keys.map((key) => key.hint)).toContain(hint)
+  })
+
+  it('lets a session list keys', async () => {
+    await makeApp('acme')
+    const token = auth.login('correct horse battery')
+    const GET_KEYS = routeHandler(keysRoute.Route, 'GET')
+    const listed = await GET_KEYS({
+      request: new Request('https://shukka.test/api/v1/apps/acme/keys', {
+        headers: { cookie: `${auth.SESSION_COOKIE}=${token}` },
+      }),
+      params: { appSlug: 'acme' },
+    })
+    expect(listed.status).toBe(200)
+    expect(((await listed.json()) as { keys: unknown[] }).keys).toEqual([])
+  })
+
+  it('rejects an unauthenticated app read', async () => {
+    await makeApp('acme')
+    const GET = routeHandler(appRoute.Route, 'GET')
+    const denied = await GET({
+      request: new Request('https://shukka.test/api/v1/apps/acme'),
+      params: { appSlug: 'acme' },
+    })
+    expect(denied.status).toBe(401)
+    expect(((await denied.json()) as { error: string }).error).toBe('unauthorized')
   })
 
   it('lets a session issue a key', async () => {

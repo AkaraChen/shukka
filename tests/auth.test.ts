@@ -9,9 +9,25 @@ vi.mock('~/lib/storage.ts', async (importOriginal) => {
 const { db } = await import('~/db/index.ts')
 const { admin, apiKeys, apps, sessions } = await import('~/db/schema.ts')
 const auth = await import('~/lib/auth.ts')
+const { resetRateLimitForTests } = await import('~/lib/rate-limit.ts')
 const { createApp } = await import('~/server/apps.ts')
 const appsServer = await import('~/server/apps.ts')
 const { ShukkaError } = await import('~/lib/errors.ts')
+const loginRoute = await import('~/routes/api/admin/login.ts')
+
+type ServerRoute = {
+  options: {
+    server?: {
+      handlers?: Record<string, (ctx: { request: Request; params: Record<string, string | undefined> }) => Promise<Response>>
+    }
+  }
+}
+
+function routeHandler(route: unknown, method: string) {
+  const handler = (route as ServerRoute).options.server?.handlers?.[method]
+  if (!handler) throw new Error(`Route has no ${method} handler`)
+  return handler
+}
 
 function makeApp(slug: string) {
   return createApp({
@@ -86,6 +102,50 @@ describe('admin session', () => {
       headers: { cookie: `other=1; ${auth.SESSION_COOKIE}=abc123; trailing=2` },
     })
     expect(auth.readSessionCookie(request)).toBe('abc123')
+  })
+
+  it('treats an expired session as invalid and prunes it on createSession', () => {
+    const token = auth.initializeAdmin('correct horse battery')
+    expect(auth.sessionIsValid(token)).toBe(true)
+
+    db.update(sessions).set({ expiresAt: Math.floor(Date.now() / 1000) - 60 }).run()
+    expect(auth.sessionIsValid(token)).toBe(false)
+
+    const next = auth.createSession()
+    expect(auth.sessionIsValid(token)).toBe(false)
+    expect(auth.sessionIsValid(next)).toBe(true)
+    expect(db.select().from(sessions).all()).toHaveLength(1)
+  })
+
+  it('returns null when the session cookie is not valid percent-encoding', () => {
+    const request = new Request('https://shukka.test/apps', {
+      headers: { cookie: `${auth.SESSION_COOKIE}=%E0%A4%A` },
+    })
+    expect(auth.readSessionCookie(request)).toBeNull()
+  })
+
+  it('sets Secure only for https, forwarded proto, or SHUKKA_SECURE_COOKIES', () => {
+    expect(auth.cookieShouldBeSecure(new Request('http://localhost:3000/'))).toBe(false)
+    expect(auth.cookieShouldBeSecure(new Request('https://shukka.test/'))).toBe(true)
+    expect(
+      auth.cookieShouldBeSecure(
+        new Request('http://localhost:3000/', { headers: { 'X-Forwarded-Proto': 'https' } }),
+      ),
+    ).toBe(true)
+
+    const previous = process.env.SHUKKA_SECURE_COOKIES
+    process.env.SHUKKA_SECURE_COOKIES = '1'
+    try {
+      expect(auth.cookieShouldBeSecure(new Request('http://localhost:3000/'))).toBe(true)
+    } finally {
+      if (previous === undefined) delete process.env.SHUKKA_SECURE_COOKIES
+      else process.env.SHUKKA_SECURE_COOKIES = previous
+    }
+
+    const local = new Request('http://localhost:3000/')
+    expect(auth.sessionCookieHeader('tok', local)).not.toMatch(/;\s*Secure(?:;|$)/)
+    expect(auth.sessionCookieHeader('tok', new Request('https://shukka.test/'))).toMatch(/;\s*Secure(?:;|$)/)
+    expect(auth.clearSessionCookieHeader(local)).not.toMatch(/;\s*Secure(?:;|$)/)
   })
 })
 
@@ -174,5 +234,53 @@ describe('api keys', () => {
     appsServer.revokeApiKey(app.id, row.id)
     appsServer.deleteApiKey(app.id, row.id)
     expect(db.select().from(apiKeys).all().some((key) => key.id === row.id)).toBe(false)
+  })
+})
+
+describe('login rate limit', () => {
+  beforeEach(() => {
+    db.delete(admin).run()
+    db.delete(sessions).run()
+    resetRateLimitForTests()
+    auth.initializeAdmin('correct horse battery')
+  })
+
+  async function postLogin(password: string) {
+    const POST = routeHandler(loginRoute.Route, 'POST')
+    return POST({
+      request: new Request('http://localhost:3000/api/admin/login', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ password }),
+      }),
+      params: {},
+    })
+  }
+
+  it('returns 429 on the 11th failed login from the same IP', async () => {
+    for (let i = 0; i < 10; i++) {
+      const response = await postLogin('wrong')
+      expect(response.status).toBe(401)
+    }
+    const limited = await postLogin('wrong')
+    expect(limited.status).toBe(429)
+    await expect(limited.json()).resolves.toMatchObject({
+      error: 'rate_limited',
+      message: expect.any(String),
+    })
+  })
+
+  it('accepts the correct password after the limiter is reset', async () => {
+    for (let i = 0; i < 10; i++) {
+      expect((await postLogin('wrong')).status).toBe(401)
+    }
+    resetRateLimitForTests()
+    const response = await postLogin('correct horse battery')
+    expect(response.status).toBe(200)
+  })
+
+  it('accepts the correct password before 10 failures', async () => {
+    const response = await postLogin('correct horse battery')
+    expect(response.status).toBe(200)
   })
 })

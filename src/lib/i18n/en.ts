@@ -286,6 +286,9 @@ export const en = {
     updated: "Password updated — you're still signed in on this session.",
     updateFailed: 'Update failed',
     changing: 'Changing…',
+    about: 'About',
+    version: (version: string) => `Version ${version}`,
+    github: 'GitHub',
   },
   errors: {
     unauthorized: 'Incorrect password or credentials.',
@@ -295,6 +298,7 @@ export const en = {
     invalid_request: 'Invalid request — check the fields and try again.',
     storage_error: 'Could not reach storage — check the bucket, endpoint and credentials.',
     metadata_error: 'The update metadata failed validation.',
+    rate_limited: 'Too many login attempts. Try again later.',
     internal_error: 'Unexpected server error.',
   },
 }

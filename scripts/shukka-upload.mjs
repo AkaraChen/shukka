@@ -1,15 +1,16 @@
 #!/usr/bin/env node
 /**
- * Publishes an electron-builder output directory to Shukka as one version.
+ * Publishes an electron-builder or Tauri output directory to Shukka as one version.
  *
  * Protocol (docs/adr/presigned-direct-upload.md):
  *   init -> presigned PUT per file -> direct upload to S3 -> finalize
  *
- * Zero dependencies so it can run from a composite action without a build step.
+ * Zero dependencies so the JavaScript action can run it without a build step.
  */
 import { createReadStream } from 'node:fs'
 import { readdir, readFile, stat } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 const MAX_ATTEMPTS = 3
 
@@ -23,10 +24,18 @@ function required(name, value) {
   return value
 }
 
+/**
+ * Standalone CI sets SHUKKA_*; a JavaScript action exposes inputs as INPUT_*.
+ * `server-url` becomes `INPUT_SERVER-URL` (hyphens kept, per Actions metadata).
+ */
+export function readInput(actionInput, envName, fallback = '') {
+  return process.env[envName] || process.env[`INPUT_${actionInput.toUpperCase()}`] || fallback
+}
+
 /** electron-builder emits blockmaps and yml alongside installers; skip nothing else. */
 const IGNORED = new Set(['.DS_Store', 'builder-debug.yml', 'builder-effective-config.yaml'])
 
-async function collectFiles(directory) {
+export async function collectFiles(directory) {
   const entries = await readdir(directory, { withFileTypes: true })
   const files = []
   for (const entry of entries) {
@@ -37,13 +46,29 @@ async function collectFiles(directory) {
   return files.sort((a, b) => a.filename.localeCompare(b.filename))
 }
 
-/** electron-builder writes the release version into every latest*.yml it produces. */
-async function versionFromMetadata(files) {
+/** electron-builder writes `version` into latest*.yml; Tauri writes it into latest.json. */
+export async function versionFromMetadata(files) {
   const metadata = files.find((file) => /\.ya?ml$/i.test(file.filename))
-  if (!metadata) fail('No electron-updater .yml metadata file found in the directory')
-  const match = (await readFile(metadata.path, 'utf8')).match(/^version:\s*(.+)$/m)
-  if (!match) fail(`Could not read "version" from ${metadata.filename}`)
-  return match[1].trim().replace(/^['"]|['"]$/g, '')
+  if (metadata) {
+    const match = (await readFile(metadata.path, 'utf8')).match(/^version:\s*(.+)$/m)
+    if (!match) fail(`Could not read "version" from ${metadata.filename}`)
+    return match[1].trim().replace(/^['"]|['"]$/g, '')
+  }
+
+  const latestJson = files.find((file) => file.filename === 'latest.json')
+  if (latestJson) {
+    let parsed
+    try {
+      parsed = JSON.parse(await readFile(latestJson.path, 'utf8'))
+    } catch {
+      fail('Could not read "version" from latest.json')
+    }
+    const version = typeof parsed?.version === 'string' ? parsed.version.replace(/^v/, '').trim() : ''
+    if (!version) fail('Could not read "version" from latest.json')
+    return version
+  }
+
+  fail('No electron-updater latest*.yml or Tauri latest.json metadata file found in the directory')
 }
 
 async function callApi(serverUrl, path, apiKey, body) {
@@ -78,13 +103,13 @@ async function putFile(uploadUrl, file) {
 }
 
 async function main() {
-  const serverUrl = required('server-url', process.env.SHUKKA_SERVER_URL)
-  const apiKey = required('api-key', process.env.SHUKKA_API_KEY)
-  const app = required('app', process.env.SHUKKA_APP)
-  const channel = process.env.SHUKKA_CHANNEL || 'stable'
-  const directory = resolve(process.env.SHUKKA_DIRECTORY || 'dist')
-  const createChannel = process.env.SHUKKA_CREATE_CHANNEL === 'true'
-  const release = process.env.SHUKKA_RELEASE === 'true'
+  const serverUrl = required('server-url', readInput('server-url', 'SHUKKA_SERVER_URL'))
+  const apiKey = required('api-key', readInput('api-key', 'SHUKKA_API_KEY'))
+  const app = required('app', readInput('app', 'SHUKKA_APP'))
+  const channel = readInput('channel', 'SHUKKA_CHANNEL', 'stable')
+  const directory = resolve(readInput('directory', 'SHUKKA_DIRECTORY', 'dist'))
+  const createChannel = readInput('create-channel', 'SHUKKA_CREATE_CHANNEL') === 'true'
+  const release = readInput('release', 'SHUKKA_RELEASE') === 'true'
 
   const files = await collectFiles(directory)
   if (files.length === 0) fail(`No files to publish in ${directory}`)
@@ -116,4 +141,6 @@ async function main() {
   }
 }
 
-main().catch((error) => fail(error.stack ?? String(error)))
+if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
+  main().catch((error) => fail(error.stack ?? String(error)))
+}

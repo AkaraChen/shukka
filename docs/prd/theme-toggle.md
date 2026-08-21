@@ -1,5 +1,7 @@
 # PRD: 明暗主题切换（Light / Dark）
 
+**Status: Superseded for settings Appearance / Account tabs** by `docs/prd/view-roles.md` / `docs/adr/panel-view-roles.md`. Theme toggle lives in the role menu; the settings page remains password + about.
+
 ## Problem
 
 面板主题是固定的：暗色样式已完成大半，但没有切换入口，也不跟随系统偏好。管理员在不同环境光下使用面板时无法选择适合的主题。

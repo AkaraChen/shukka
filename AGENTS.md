@@ -40,14 +40,21 @@ Project: `shukka` — TanStack Start app (panel + API + update feed), SQLite via
 | `npm run typecheck` | `tsc -b` (needs `src/routeTree.gen.ts`, produced by a build or dev run) |
 | `npm test` | vitest |
 | `npm run test:e2e` | electron-updater against a live instance (`SHUKKA_URL`) |
+| `npm run test:e2e:rollback` | Publish two releases, PATCH rollback, then feed + electron-updater (`SHUKKA_URL`, `SHUKKA_API_KEY`) |
 | `npm run test:e2e:tauri` | Tauri plugin-updater against a live instance (`SHUKKA_URL`) |
 | `npm run test:e2e` | Host-platform electron-updater check+download against a live Shukka (`SHUKKA_URL`, `SHUKKA_API_KEY`) |
 | `npm run db:generate` | Regenerate `drizzle/` migrations after editing `src/db/schema.ts` |
 | `actionlint` | Lint `action.yml` and workflows |
 
-The GitHub Action is exercised end to end with `act` against a local MinIO; see the comment at the
-top of `.github/workflows/action-test.yml`. The same workflow then runs `tests/e2e/`
-(Electron library + electron-updater) against that published feed.
+The runtime image `ghcr.io/shukka-app/shukka` is published by
+`.github/workflows/docker.yml` on `main` and on `v*.*.*` tags.
+
+The GitHub Action is a node24 JavaScript action (`scripts/shukka-upload.mjs`); it
+does not call bash. CI matrices MinIO and the JuiceFS S3 gateway on Ubuntu
+(`.github/workflows/ci.yml` `s3` job, plus `.github/workflows/action-test.yml`
+publish / Tauri jobs). Windows action e2e stays on MinIO (no Docker). The
+action-test workflow then runs `tests/e2e/` (Electron library + electron-updater)
+against that published feed.
 
 Layout:
 
@@ -72,3 +79,11 @@ Layout:
 `CLAUDE.md` is a symlink to this file — edit `AGENTS.md`.
 
 This harness was installed by `hnm init`.
+
+## Cursor Cloud specific instructions
+
+Dependencies are installed by the environment update script (`npm install`). Standard scripts live in the `# Commands` table above and in `README.md`; the notes below are only the non-obvious gotchas.
+
+- `npm run typecheck` needs the generated `src/routeTree.gen.ts`. It is produced by a build or a dev run, so run `npm run build` (or start `npm run dev`) at least once before `tsc -b`.
+- `npm run dev` serves the panel + API on `:3000`. On a fresh database the root redirects to `/setup` to set the admin password before login.
+- Creating an app end-to-end requires a reachable S3-compatible endpoint — the creation wizard validates bucket connectivity ("Verifying bucket…") and blocks with "Could not reach storage" otherwise. For local manual testing, run MinIO or `npm run juicefs` (the same backends the CI S3 matrix uses) and in the wizard pick that provider. MinIO / JuiceFS both need **path-style** addressing (the wizard sets it).

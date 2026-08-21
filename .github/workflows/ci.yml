@@ -28,3 +28,48 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: raven-actions/actionlint@v2
+
+  # Real S3 path against every supported compatible backend: write probe,
+  # presigned PUT, finalize HeadObject, and a 302 download.
+  s3:
+    name: S3 (${{ matrix.s3 }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        s3: [minio, juicefs]
+    env:
+      SHUKKA_URL: http://localhost:3000
+      MINIO_URL: http://localhost:9000
+      S3_BACKEND: ${{ matrix.s3 }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Start ${{ matrix.s3 }}
+        run: node .github/scripts/start-s3.mjs ${{ matrix.s3 }}
+      - run: npm ci
+      - run: npm run build
+      - name: Start Shukka
+        run: node .github/scripts/start-server.mjs
+      - name: Provision app, bucket and API key
+        id: provision
+        run: node .github/scripts/provision.mjs
+      - name: Publish a fake release
+        id: publish
+        env:
+          SHUKKA_SERVER_URL: ${{ env.SHUKKA_URL }}
+          SHUKKA_API_KEY: ${{ steps.provision.outputs.api-key }}
+          SHUKKA_APP: demo-app
+          SHUKKA_CHANNEL: stable
+          SHUKKA_DIRECTORY: out
+          SHUKKA_RELEASE: 'true'
+        run: |
+          node .github/scripts/fake-release.mjs out "1.2.${{ github.run_number }}"
+          node scripts/shukka-upload.mjs
+      - name: Verify the update feed serves the new version
+        run: |
+          node .github/scripts/verify-feed.mjs \
+            "$SHUKKA_URL/api/update/demo-app/stable" "${{ steps.publish.outputs.version }}"

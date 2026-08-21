@@ -30,4 +30,4 @@ Shukka 是面板 + 上传 API + 更新 feed 的同一个 TanStack Start / Nitro 
 - 数据目录丢失 = 丢版本记录、API key、session，以及解密 S3 secret 的能力；bucket 里的制品还在但面板对不上。
 - 两实例写同一 SQLite 会损坏数据库。PaaS 必须锁副本数为 1。
 - `request.url.origin` 用于 Integration 文案与 Tauri feed 绝对 URL。Nitro node-server 默认不信任 `X-Forwarded-Proto`；反代 HTTP 回源时 Tauri 制品 URL 可能变成 `http://`。规避见 `docs/prd/deploy.md`，不在本 ADR 发明新环境变量。
-- 仓库 README 写了 `ghcr.io/akarachen/shukka`，但当前没有发布该镜像的 workflow。可靠构建入口是根 `Dockerfile`。
+- 推荐分发是 `ghcr.io/shukka-app/shukka`（semver 标签发布，见 `docs/adr/ghcr-on-semver-tag.md`）。源码构建入口仍是根 `Dockerfile`。

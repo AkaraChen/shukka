@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, Link, useRouter } from '@tanstack/react-router'
-import { BookOpen, GitBranch, KeyRound, Plug, Settings2 } from 'lucide-react'
+import { ArrowUpRight, BookOpen, GitBranch, KeyRound, Plug, Settings2 } from 'lucide-react'
 import { parseAsStringLiteral, useQueryState } from 'nuqs'
 import { useEffect, useState } from 'react'
 import { PageHeader, PageTabBar } from '~/components/page-header.tsx'
@@ -110,7 +110,7 @@ function AppDetailPage() {
                     'relative inline-flex h-[calc(100%-1px)] flex-none items-center justify-center gap-1.5 rounded-md border border-transparent px-0 py-1 text-sm font-medium whitespace-nowrap text-foreground/60 transition-all hover:text-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-1 focus-visible:outline-ring dark:text-muted-foreground dark:hover:text-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*=\'size-\'])]:size-4',
                   )}
                 >
-                  <BookOpen /> {t.apps.detail.apiDocs}
+                  <BookOpen /> {t.apps.detail.apiDocs} <ArrowUpRight className="size-3 opacity-70" />
                 </Link>
               </>
             ) : null}

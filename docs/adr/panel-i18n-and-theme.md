@@ -4,6 +4,8 @@
 
 Accepted.
 
+Theme *placement* (settings Appearance / Account tabs) was superseded by `docs/adr/panel-view-roles.md`: the toggle lives in the role menu; settings stays password + about. i18n cookie / SSR / typed-dictionary parts of this ADR still stand.
+
 ## Context
 
 两个展示层特性一起落地：面板国际化（`docs/prd/panel-i18n.md`）与明暗主题切换（`docs/prd/theme-toggle.md`）。现状：

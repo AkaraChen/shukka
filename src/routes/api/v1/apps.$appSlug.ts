@@ -10,8 +10,8 @@ export const Route = createFileRoute('/api/v1/apps/$appSlug')({
     handlers: {
       GET: handle(async ({ request, params }) => {
         const slug = textParam(params, 'appSlug')
-        requireAppActor(request, slug)
-        return Response.json(appDetailBySlug(slug, new URL(request.url).origin))
+        const { via } = requireAppActor(request, slug)
+        return Response.json(appDetailBySlug(slug, new URL(request.url).origin, { includeKeys: via === 'session' }))
       }),
       PATCH: handle(async ({ request, params }) => {
         const { app } = requireAppActor(request, textParam(params, 'appSlug'))

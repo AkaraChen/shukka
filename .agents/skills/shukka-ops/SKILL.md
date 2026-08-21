@@ -19,7 +19,7 @@ Set `SHUKKA_URL` (e.g. `https://updates.example.com`) before running anything be
 ## Publish a release
 
 Prefer the bundled uploader over hand-rolling the protocol. It reads the version
-from the `latest*.yml` in the directory:
+from `latest*.yml` (Electron) or `latest.json` (Tauri) in the directory:
 
 ```bash
 SHUKKA_SERVER_URL="$SHUKKA_URL" \
@@ -33,7 +33,7 @@ node scripts/shukka-upload.mjs
 In CI, use the action instead:
 
 ```yaml
-- uses: akarachen/shukka@main
+- uses: shukka-app/shukka@v1.0.2
   with:
     server-url: ${{ secrets.SHUKKA_URL }}
     api-key: ${{ secrets.SHUKKA_API_KEY }}
@@ -58,6 +58,14 @@ full request and response shapes).
 Until finalize succeeds the channel keeps serving the previous version, so a
 failed upload is never half-published. Do not retry `init` after a partial
 upload — start a fresh `init`; the old pending upload expires on its own.
+
+## Release notes (public, no auth)
+
+If the app enabled Release log, clients can read published notes without a key:
+
+```bash
+curl "$SHUKKA_URL/api/v1/apps/my-app/channels/stable/notes?from=1.0.0&locale=en-US"
+```
 
 ## Administer apps, channels and keys
 

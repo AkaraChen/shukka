@@ -163,8 +163,37 @@ export function openApiDocument(origin: string) {
       '/api/v1/upload/init': {
         post: {
           tags: ['Upload'],
-          summary: 'Start a pending upload',
+          summary:
+            'Start a pending upload. Electron requires at least one `.yml`; Tauri requires `latest.json` and/or artifact+`.sig` pairs (see spec).',
           security: [{ apiKey: [] }],
+          requestBody: {
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['channel', 'version', 'files'],
+                  properties: {
+                    app: { type: 'string' },
+                    channel: { type: 'string' },
+                    version: { type: 'string' },
+                    createChannel: { type: 'boolean' },
+                    files: {
+                      type: 'array',
+                      minItems: 1,
+                      items: {
+                        type: 'object',
+                        required: ['filename'],
+                        properties: {
+                          filename: { type: 'string' },
+                          size: { type: 'integer', minimum: 0 },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
           responses: { '200': { description: 'uploadId and presigned PUT URLs' } },
         },
       },

@@ -23,12 +23,16 @@ vi.mock('~/lib/storage.ts', async (importOriginal) => {
 
 const { eq } = await import('drizzle-orm')
 const { db } = await import('~/db/index.ts')
-const { apps, versions } = await import('~/db/schema.ts')
+const { apps, pendingUploads, versions } = await import('~/db/schema.ts')
 const { createApp, DEFAULT_CHANNEL } = await import('~/server/apps.ts')
-const { createChannel, deleteChannel, getChannel } = await import('~/server/channels.ts')
-const { deleteVersion, finalizeUpload, initUpload } = await import('~/server/releases.ts')
+const { createChannel, deleteChannel, getChannel, listChannelsForApps, listVersionsForChannels } =
+  await import('~/server/channels.ts')
+const { deleteVersion, finalizeUpload, initUpload, listArtifactsForVersions } = await import('~/server/releases.ts')
+const { clearObjectCache } = await import('~/lib/object-cache.ts')
+const { appDetail, appSummaries } = await import('~/server/dashboard.ts')
 const { resolveFeedRequest } = await import('~/server/feed.ts')
 const { ShukkaError } = await import('~/lib/errors.ts')
+const { deleteObjects, isS3NotFound } = await import('~/lib/storage.ts')
 
 const ORIGIN = 'https://updates.test'
 
@@ -61,6 +65,10 @@ async function publish(app: Awaited<ReturnType<typeof createApp>>, channel: stri
   }
   return { init, result: await finalizeUpload(app, init.uploadId, { release: true }), installer }
 }
+
+beforeEach(() => {
+  clearObjectCache()
+})
 
 describe('release flow', () => {
   beforeEach(() => {
@@ -197,6 +205,86 @@ describe('release flow', () => {
     await expect(publish(app, 'stable', '1.0.0')).rejects.toThrow(/already exists/)
   })
 
+  it('rejects a second init while a pending upload is in flight', async () => {
+    const app = await createApp(appInput)
+    await initUpload(app, {
+      channel: 'stable',
+      version: '1.0.1',
+      files: [{ filename: 'latest.yml' }],
+    })
+    await expect(
+      initUpload(app, {
+        channel: 'stable',
+        version: '1.0.1',
+        files: [{ filename: 'latest.yml' }],
+      }),
+    ).rejects.toMatchObject({
+      name: 'ShukkaError',
+      code: 'conflict',
+      message: 'Version 1.0.1 already has a pending upload',
+    })
+  })
+
+  it('allows re-init after an expired pending upload is cleaned up', async () => {
+    const app = await createApp(appInput)
+    const first = await initUpload(app, {
+      channel: 'stable',
+      version: '1.0.1',
+      files: [{ filename: 'latest.yml' }],
+    })
+    db.update(pendingUploads).set({ expiresAt: 1 }).where(eq(pendingUploads.id, first.uploadId)).run()
+    await expect(
+      initUpload(app, {
+        channel: 'stable',
+        version: '1.0.1',
+        files: [{ filename: 'latest.yml' }],
+      }),
+    ).resolves.toMatchObject({ files: expect.any(Array) })
+  })
+
+  it('maps a unique version insert during finalize to conflict', async () => {
+    const app = await createApp(appInput)
+    const init = await initUpload(app, {
+      channel: 'stable',
+      version: '1.0.1',
+      files: [{ filename: 'latest.yml' }, { filename: 'Acme-Setup-1.0.1.exe' }],
+    })
+    objects.set(init.files[0].key, metadataFor('1.0.1', 'Acme-Setup-1.0.1.exe'))
+    objects.set(init.files[1].key, 'binary')
+    const channel = getChannel(app.id, 'stable')
+    db.insert(versions)
+      .values({
+        appId: app.id,
+        channelId: channel.id,
+        version: '1.0.1',
+        createdAt: Math.floor(Date.now() / 1000),
+      })
+      .run()
+
+    await expect(finalizeUpload(app, init.uploadId)).rejects.toMatchObject({
+      name: 'ShukkaError',
+      code: 'conflict',
+      message: 'Version already exists',
+    })
+  })
+
+  it('keeps the version row when storage delete fails', async () => {
+    const app = await createApp(appInput)
+    const published = await publish(app, 'stable', '1.0.0')
+    vi.mocked(deleteObjects).mockRejectedValueOnce(new Error('s3 down'))
+    await expect(deleteVersion(app, published.result.versionId)).rejects.toThrow()
+    expect(db.select().from(versions).where(eq(versions.id, published.result.versionId)).get()).toBeDefined()
+  })
+
+  it('treats only S3 not-found shapes as a missing object', () => {
+    expect(isS3NotFound({ name: 'NotFound' })).toBe(true)
+    expect(isS3NotFound({ name: 'NoSuchKey' })).toBe(true)
+    expect(isS3NotFound({ $metadata: { httpStatusCode: 404 } })).toBe(true)
+    expect(isS3NotFound({ name: 'TimeoutError' })).toBe(false)
+    expect(isS3NotFound({ $metadata: { httpStatusCode: 403 } })).toBe(false)
+    expect(isS3NotFound(new Error('network'))).toBe(false)
+  })
+
   it('allows the same version string on a different channel', async () => {
     const app = await createApp(appInput)
     createChannel(app.id, 'beta')
@@ -250,6 +338,27 @@ describe('release flow', () => {
       createChannel: true,
     })
     expect(init.uploadId).toBeTruthy()
+  })
+
+  it('rolls the feed back when currentVersion is pointed at an older released version', async () => {
+    const app = await createApp(appInput)
+    const first = await publish(app, 'stable', '1.0.0')
+    const second = await publish(app, 'stable', '2.0.0')
+
+    const live = await resolveFeedRequest('acme', 'stable', 'latest.yml', ORIGIN)
+    expect((live as { body: string }).body).toContain('version: 2.0.0')
+
+    const { setCurrentVersion } = await import('~/server/channels.ts')
+    setCurrentVersion(app.id, 'stable', '1.0.0')
+
+    const rolled = await resolveFeedRequest('acme', 'stable', 'latest.yml', ORIGIN)
+    expect((rolled as { body: string }).body).toContain('version: 1.0.0')
+    expect(getChannel(app.id, 'stable').currentVersionId).toBe(first.result.versionId)
+    await expect(resolveFeedRequest('acme', 'stable', second.installer, ORIGIN)).resolves.toMatchObject({
+      kind: 'redirect',
+    })
+    expect(db.select().from(versions).where(eq(versions.id, first.result.versionId)).get()?.releasedAt).not.toBeNull()
+    expect(db.select().from(versions).where(eq(versions.id, second.result.versionId)).get()?.releasedAt).not.toBeNull()
   })
 
   it('falls back to the previous version when the current one is deleted', async () => {
@@ -339,5 +448,68 @@ describe('metadata consistency', () => {
     objects.set(init.files[1].key, 'binary')
 
     await expect(finalizeUpload(app, init.uploadId)).rejects.toThrow(/were not uploaded/)
+  })
+})
+
+describe('dashboard appDetail shape', () => {
+  beforeEach(() => {
+    db.delete(apps).run()
+    objects.clear()
+  })
+
+  it('returns empty results for empty id batches without querying', () => {
+    expect(listChannelsForApps([])).toEqual([])
+    expect(listVersionsForChannels([])).toEqual([])
+    expect(listArtifactsForVersions([])).toEqual([])
+  })
+
+  it('keeps channel, version, and artifact counts and currentVersion after batching', async () => {
+    const app = await createApp(appInput)
+    createChannel(app.id, 'beta')
+    await publish(app, 'stable', '1.0.0')
+    await publish(app, 'beta', '2.0.0')
+
+    const detail = appDetail(app.id, ORIGIN)
+    // Recorded from appDetail before the batch rewrite (two channels, one version each).
+    expect(detail.channels).toHaveLength(2)
+    expect(detail.channels.map((channel) => channel.name)).toEqual(['stable', 'beta'])
+    expect(detail.channels.map((channel) => channel.versions.length)).toEqual([1, 1])
+    expect(detail.channels.map((channel) => channel.versions[0]?.artifacts.length)).toEqual([2, 2])
+    expect(detail.channels.map((channel) => channel.versions[0]?.version)).toEqual(['1.0.0', '2.0.0'])
+    expect(detail.channels.map((channel) => channel.versions[0]?.isCurrent)).toEqual([true, true])
+    expect(detail.channels.map((channel) => channel.currentVersionId)).toEqual(
+      detail.channels.map((channel) => channel.versions[0]?.id),
+    )
+    expect(detail.channels[0]?.versions[0]?.artifacts.map((artifact) => artifact.filename)).toEqual([
+      'Acme-Setup-1.0.0.exe',
+      'latest.yml',
+    ])
+    expect(detail.channels[1]?.versions[0]?.artifacts.map((artifact) => artifact.filename)).toEqual([
+      'Acme-Setup-2.0.0.exe',
+      'latest.yml',
+    ])
+    expect(detail.channels[0]?.feedUrl).toBe(`${ORIGIN}/api/update/acme/stable`)
+    expect(detail).toHaveProperty('keys')
+
+    const withoutKeys = appDetail(app.id, ORIGIN, { includeKeys: false })
+    expect(withoutKeys).not.toHaveProperty('keys')
+    expect(withoutKeys.channels.map((channel) => channel.name)).toEqual(['stable', 'beta'])
+
+    const summaries = appSummaries()
+    expect(summaries).toHaveLength(1)
+    expect(summaries[0]?.channels.map((channel) => ({ name: channel.name, currentVersion: channel.currentVersion }))).toEqual([
+      { name: 'stable', currentVersion: '1.0.0' },
+      { name: 'beta', currentVersion: '2.0.0' },
+    ])
+  })
+
+  it('does not crash for an app with a channel and zero versions', async () => {
+    const app = await createApp(appInput)
+    const detail = appDetail(app.id, ORIGIN)
+    expect(detail.channels).toHaveLength(1)
+    expect(detail.channels[0]?.name).toBe('stable')
+    expect(detail.channels[0]?.versions).toEqual([])
+    expect(detail.channels[0]?.currentVersionId).toBeNull()
+    expect(appSummaries()[0]?.channels).toEqual([{ id: detail.channels[0]?.id, name: 'stable', currentVersion: null }])
   })
 })
